@@ -13,6 +13,8 @@ final class OverlayModel: ObservableObject {
     @Published var elapsed: Double = 0
     /// Called when the user types in the bar (not when the transcript updates it).
     var onUserEdit: ((String) -> Void)?
+    /// Called when the session name is clicked: shows the session list to switch to.
+    var onShowSessions: (() -> Void)?
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
@@ -80,9 +82,18 @@ struct OverlayView: View {
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.secondary)
-            Text(model.targetName.isEmpty ? "no session" : model.targetName)
-                .font(.system(size: 12, weight: .medium)).lineLimit(1)
+            Button { model.onShowSessions?() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(model.targetName.isEmpty ? "no session" : model.targetName)
+                        .font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(.white.opacity(0.08), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Send this message to another session")
         }
     }
 
