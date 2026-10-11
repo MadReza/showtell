@@ -58,3 +58,72 @@ final class HotKeys {
         return s
     }
 }
+
+/// A tap of one modifier key on its own (for example the left Option key): press and release
+/// within `maxHold`, with no other key, modifier or click in between. Holding the key for
+/// Option-click or ⌥-shortcuts never fires. Seeing keys outside Showtell needs Accessibility.
+final class ModifierTap {
+    static let keyCodes: [String: UInt16] = [
+        "leftOption": 58, "rightOption": 61, "leftControl": 59, "rightControl": 62,
+        "leftCommand": 55, "rightCommand": 54, "leftShift": 56, "rightShift": 60,
+    ]
+    static let labels: [String: String] = [
+        "leftOption": "Left ⌥", "rightOption": "Right ⌥", "leftControl": "Left ⌃", "rightControl": "Right ⌃",
+        "leftCommand": "Left ⌘", "rightCommand": "Right ⌘", "leftShift": "Left ⇧", "rightShift": "Right ⇧",
+    ]
+
+    private let keyCode: UInt16
+    private let maxHold: TimeInterval
+    private var monitors: [Any] = []
+    private var pressedAt: Date?
+    var onTap: (() -> Void)?
+
+    init?(name: String, maxHold: TimeInterval = 0.4) {
+        guard let code = Self.keyCodes[name] else { return nil }
+        keyCode = code
+        self.maxHold = maxHold
+    }
+
+    func start() {
+        stop()
+        let flags: (NSEvent) -> Void = { [weak self] in self?.flagsChanged($0) }
+        let other: (NSEvent) -> Void = { [weak self] _ in self?.pressedAt = nil }
+        let spoilers: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags) { monitors.append(m) }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: spoilers, handler: other) { monitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { flags($0); return $0 }) {
+            monitors.append(m)
+        }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: spoilers, handler: { other($0); return $0 }) {
+            monitors.append(m)
+        }
+    }
+
+    func stop() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        pressedAt = nil
+    }
+
+    private func flagsChanged(_ event: NSEvent) {
+        guard event.keyCode == keyCode else {
+            pressedAt = nil  // another modifier joined in
+            return
+        }
+        let held = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
+        if pressedAt == nil, Self.isDown(keyCode, event.modifierFlags), held == [.option] || held == [.control] || held == [.command] || held == [.shift] {
+            pressedAt = Date()
+        } else if let start = pressedAt, !Self.isDown(keyCode, event.modifierFlags) {
+            pressedAt = nil
+            if Date().timeIntervalSince(start) <= maxHold { onTap?() }
+        } else {
+            pressedAt = nil
+        }
+    }
+
+    /// Whether this exact key (left or right) is down, from the device-dependent flag bits.
+    private static func isDown(_ code: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
+        let bits: [UInt16: UInt] = [58: 0x20, 61: 0x40, 59: 0x01, 62: 0x2000, 55: 0x08, 54: 0x10, 56: 0x02, 60: 0x04]
+        return flags.rawValue & (bits[code] ?? 0) != 0
+    }
+}

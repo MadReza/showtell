@@ -16,6 +16,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private let hotKeys = HotKeys()
     private let clipboard = ClipboardWatcher()
     private let screenshotKeys = ScreenshotKeyMonitor()
+    private var tap: ModifierTap?
+    private var trustTimer: Timer?
     private let panel = OverlayPanel()
     private var statusItem: NSStatusItem!
 
@@ -72,20 +74,42 @@ final class AppController: NSObject, NSMenuDelegate {
         }
 
         Task { await speech.load() }
-        if settings.hideDuringScreenshots, !ScreenshotKeyMonitor.isTrusted {
+        if (tap != nil || settings.hideDuringScreenshots), !ScreenshotKeyMonitor.isTrusted {
             ScreenshotKeyMonitor.askForPermission()
+            watchForTrust()
+        }
+    }
+
+    /// Key monitors added before Accessibility is granted may stay deaf, so add them again once it is.
+    private func watchForTrust() {
+        trustTimer?.invalidate()
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, ScreenshotKeyMonitor.isTrusted else { return }
+                timer.invalidate()
+                self.tap?.start()
+                if self.state == .recording, self.settings.hideDuringScreenshots { self.screenshotKeys.start() }
+                self.flash(.info("Accessibility allowed · \(self.hotKeyLabel) to start talking"), for: 2.5)
+            }
         }
     }
 
     // MARK: Hotkey
 
-    private var hotKeyLabel: String { HotKeys.describe(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers) }
+    private var hotKeyLabel: String {
+        let chord = HotKeys.describe(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers)
+        guard tap != nil, let name = ModifierTap.labels[settings.tapKey] else { return chord }
+        return "\(name) (or \(chord))"
+    }
 
     private func registerMainHotKey() {
         let ok = hotKeys.register(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers) { [weak self] in
             self?.toggle()
         }
         if ok == nil { flash(.error("\(hotKeyLabel) is taken by another app; change hotKeyCode in settings.json")) }
+        tap = ModifierTap(name: settings.tapKey)
+        tap?.onTap = { [weak self] in self?.toggle() }
+        tap?.start()
     }
 
     func toggle() {
@@ -369,8 +393,8 @@ final class AppController: NSObject, NSMenuDelegate {
         let hide = item("Hide bar during screenshots", #selector(toggleHide))
         hide.state = settings.hideDuringScreenshots ? .on : .off
         menu.addItem(hide)
-        if settings.hideDuringScreenshots, !ScreenshotKeyMonitor.isTrusted {
-            menu.addItem(item("Allow Accessibility (to notice ⌘⇧4)…", #selector(askAccessibility)))
+        if tap != nil || settings.hideDuringScreenshots, !ScreenshotKeyMonitor.isTrusted {
+            menu.addItem(item("Allow Accessibility (for the ⌥ tap and ⌘⌃⇧4)…", #selector(askAccessibility)))
         }
         menu.addItem(.separator())
         menu.addItem(item("Edit your words…", #selector(editVocabulary)))
@@ -434,7 +458,10 @@ final class AppController: NSObject, NSMenuDelegate {
         if settings.hideDuringScreenshots, !ScreenshotKeyMonitor.isTrusted { ScreenshotKeyMonitor.askForPermission() }
     }
 
-    @objc private func askAccessibility() { ScreenshotKeyMonitor.askForPermission() }
+    @objc private func askAccessibility() {
+        ScreenshotKeyMonitor.askForPermission()
+        watchForTrust()
+    }
     @objc private func editVocabulary() { NSWorkspace.shared.open(storage.vocabularyURL) }
     @objc private func editReplacements() { NSWorkspace.shared.open(storage.replacementsURL) }
     @objc private func editSettings() {

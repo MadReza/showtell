@@ -5,6 +5,9 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Carbon virtual key code and modifier mask (cmdKey 0x100, shiftKey 0x200, optionKey 0x800, controlKey 0x1000).
     public var hotKeyCode: UInt32 = 49  // space
     public var hotKeyModifiers: UInt32 = 0x1000 | 0x800  // ⌃⌥
+    /// A modifier tapped on its own also starts and sends: leftOption, rightOption, leftControl,
+    /// rightControl, leftCommand, rightCommand, leftShift, rightShift, or "off".
+    public var tapKey = "leftOption"
     /// Second press sends with Enter. Off: the message is pasted and you press Enter yourself.
     public var submitOnSecondPress = true
     /// Hide the bar while a native ⌘⌃⇧3/4 (copy to clipboard) screenshot is being taken.
@@ -18,6 +21,7 @@ public struct Settings: Codable, Equatable, Sendable {
         let d = Settings()
         hotKeyCode = try c.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? d.hotKeyCode
         hotKeyModifiers = try c.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers) ?? d.hotKeyModifiers
+        tapKey = try c.decodeIfPresent(String.self, forKey: .tapKey) ?? d.tapKey
         submitOnSecondPress = try c.decodeIfPresent(Bool.self, forKey: .submitOnSecondPress) ?? d.submitOnSecondPress
         hideDuringScreenshots = try c.decodeIfPresent(Bool.self, forKey: .hideDuringScreenshots) ?? d.hideDuringScreenshots
         pinned = try c.decodeIfPresent(PinnedTarget.self, forKey: .pinned)
