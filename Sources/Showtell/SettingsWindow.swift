@@ -115,7 +115,7 @@ struct SettingsView: View {
             Section("Shortcuts") {
                 LabeledContent("Start and send") { ShortcutField(model: model, path: \.startShortcut) }
                 LabeledContent("Cancel a recording") { ShortcutField(model: model, path: \.cancelShortcut) }
-                Text("Click a shortcut, then press the new one: a key with modifiers such as ⌃⌥Space, or tap a single modifier such as the left ⌥. Esc keeps the old one.")
+                Text("Click a shortcut, then press the new one: a key with modifiers such as ⌃⌥Space, or tap a single modifier such as the left ⌥. Esc on its own works for cancelling. Press nothing for 2 seconds to keep the old one.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Behaviour") {
@@ -199,7 +199,7 @@ struct ShortcutField: View {
 
     private func start() {
         model.recording = path
-        recorder.start { shortcut in
+        recorder.start(allowPlainEsc: path == \.cancelShortcut) { shortcut in
             if let shortcut { model.settings[keyPath: path] = shortcut }
             stop()
         }
@@ -218,6 +218,10 @@ final class ShortcutRecorder: ObservableObject {
     private var monitor: Any?
     private var pendingTap: (name: String, at: Date)?
     private var done: ((Shortcut?) -> Void)?
+    private var allowPlainEsc = false
+    /// Gives up, keeping the old shortcut, after this long without a key.
+    private let patience: TimeInterval = 2
+    private var giveUp: DispatchWorkItem?
 
     private static let modifierNames: [UInt16: String] = [
         58: "leftOption", 61: "rightOption", 59: "leftControl", 62: "rightControl",
@@ -225,10 +229,12 @@ final class ShortcutRecorder: ObservableObject {
     ]
     private static let functionKeys: Set<UInt16> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106]
 
-    func start(done: @escaping (Shortcut?) -> Void) {
+    func start(allowPlainEsc: Bool, done: @escaping (Shortcut?) -> Void) {
         stop()
         self.done = done
+        self.allowPlainEsc = allowPlainEsc
         hint = nil
+        waitAgain()
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
             self.handle(event)
@@ -239,12 +245,22 @@ final class ShortcutRecorder: ObservableObject {
     func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        giveUp?.cancel()
+        giveUp = nil
         pendingTap = nil
         done = nil
         hint = nil
     }
 
+    private func waitAgain() {
+        giveUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.finish(nil) }
+        giveUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + patience, execute: work)
+    }
+
     private func handle(_ event: NSEvent) {
+        waitAgain()
         let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if event.type == .flagsChanged {
             guard let name = Self.modifierNames[event.keyCode] else { return }
@@ -261,11 +277,9 @@ final class ShortcutRecorder: ObservableObject {
             return
         }
         pendingTap = nil
-        if event.keyCode == 53, mods.isEmpty {  // Esc: keep the old shortcut
-            finish(nil)
-            return
-        }
-        guard !mods.isEmpty || Self.functionKeys.contains(event.keyCode) else {
+        // A plain Esc is fine for cancelling (only listened for while recording), not for starting.
+        let plainEscOK = allowPlainEsc && event.keyCode == 53
+        guard !mods.isEmpty || plainEscOK || Self.functionKeys.contains(event.keyCode) else {
             hint = "Add ⌃, ⌥, ⇧ or ⌘, or tap one modifier"
             return
         }

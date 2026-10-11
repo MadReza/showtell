@@ -64,7 +64,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.onShowSessions = { [weak self] in self?.showSessionsInBar() }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
-        screenshotKeys.onEscape = { [weak self] in self?.panel.reappear() }
+        screenshotKeys.onEscape = { [weak self] in self?.screenshotOver() }
 
         // Lets scripts and other tools drive Showtell: `showtell-cli toggle` / `showtell-cli cancel`.
         let center = DistributedNotificationCenter.default()
@@ -230,7 +230,7 @@ final class AppController: NSObject, NSMenuDelegate {
         composer.addShot(url, at: time)
         if let image = NSImage(data: png) { model.shots.append((number, image)) }
         model.text = composer.render()
-        panel.reappear()
+        screenshotOver()
     }
 
     /// ⌘⌃⇧3/4 copy to the clipboard: hide until the shot arrives. The file variants (no ⌃) need no
@@ -238,9 +238,21 @@ final class AppController: NSObject, NSMenuDelegate {
     private func screenshotKeysPressed() {
         guard state == .recording else { return }
         panel.vanish()
-        let work = DispatchWorkItem { [weak self] in self?.panel.reappear() }  // shot cancelled or slow
+        // A plain-Esc cancel shortcut would swallow the Esc that aborts the screenshot selection.
+        if settings.cancelShortcut == .chord(53, 0, "Esc") {
+            cancelBinding?.stop()
+            cancelBinding = nil
+        }
+        let work = DispatchWorkItem { [weak self] in self?.screenshotOver() }  // shot cancelled or slow
         reappearWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: work)
+    }
+
+    /// The screenshot arrived or was abandoned: show the bar and listen for the cancel shortcut again.
+    private func screenshotOver() {
+        reappearWork?.cancel()
+        panel.reappear()
+        if state == .recording, cancelBinding == nil { bindCancel() }
     }
 
     private func finishAndSend() async {
