@@ -9,6 +9,7 @@ final class SettingsWindow {
     private let storage: Storage
     private var window: NSWindow?
     private var model: SettingsModel?
+    private var poll: Timer?
 
     init(storage: Storage) {
         self.storage = storage
@@ -16,6 +17,7 @@ final class SettingsWindow {
 
     func show(settings: ShowtellCore.Settings, onChange: @escaping (ShowtellCore.Settings) -> Void, onRecording: @escaping (Bool) -> Void,
               onAskAccessibility: @escaping () -> Void) {
+        defer { watchPermissions() }
         if let window, let model {
             model.settings = settings
             model.refresh()
@@ -41,6 +43,20 @@ final class SettingsWindow {
 
     /// Permissions may have changed.
     func refresh() { model?.refresh() }
+
+    /// Permissions change in System Settings without telling us, so look again while the window is open.
+    private func watchPermissions() {
+        poll?.invalidate()
+        poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, let window = self.window, window.isVisible else {
+                    timer.invalidate()
+                    return
+                }
+                self.model?.refresh()
+            }
+        }
+    }
 }
 
 @MainActor
@@ -115,9 +131,19 @@ struct SettingsView: View {
                         Button("Allow…") { model.onAskAccessibility?() }
                     }
                 }
-                if !model.accessibilityAllowed, model.needsAccessibility {
-                    Text("Needed for single-modifier shortcuts and to hide the bar on ⌘⌃⇧4.")
-                        .font(.caption).foregroundStyle(.orange)
+                if !model.accessibilityAllowed {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if model.needsAccessibility {
+                            Text("Needed for single-modifier shortcuts and to hide the bar on ⌘⌃⇧4.")
+                                .foregroundStyle(.orange)
+                        }
+                        Text("Already switched on for Showtell? That entry belongs to an older build: select it, remove it with −, then click Allow… again.")
+                            .foregroundStyle(.secondary)
+                        Button("Open Accessibility settings") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                        }
+                    }
+                    .font(.caption)
                 }
             }
             Section {
