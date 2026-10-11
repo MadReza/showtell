@@ -31,8 +31,8 @@ Updated 11 Oct 2026. Spec: [spec.md](spec.md).
 1. ✓ **First real run** (11 Oct): four read-aloud tests, fixes in the [build report](reports/build-verification.md).
 2. **Latency:** try a fast preview (Parakeet EOU 160 ms) under the boosted transcript if 2 s feels slow.
 3. **Controls:** ✓ Settings window with shortcut recording (11 Oct). Still open: push-to-talk (hold) as an alternative to toggle.
-4. **More terminals:** iTerm2 plain tabs (AppleScript `write text` with paste markers), tmux
-   (`paste-buffer -p`). Rules already verified.
+4. ✓ **More terminals** (11 Oct): tmux and plain iTerm2 tabs, found from `~/.claude/sessions`;
+   verified with throwaway Claude sessions in both (two images, answered in order).
 5. **Region capture and OCR terms:** optional ScreenCaptureKit capture; feed OCR words to the boost.
 6. **Orchestration:** one Claude session receiving all inputs and dispatching to others.
 

@@ -8,7 +8,7 @@ While looking at an app or website, you talk and take screenshots. Your narratio
 screenshots, in the order you took them, reach **one Claude Code session you opened**, without
 you switching to the terminal.
 
-Scope for now: **Claude Code, local only, herdr.** Later, that one session may orchestrate other
+Scope for now: **Claude Code, local only; herdr, tmux and plain iTerm2 tabs.** Later, that one session may orchestrate other
 sessions; Showtell's job is to get many inputs into it reliably.
 
 ## The interaction
@@ -70,7 +70,6 @@ after it.
 
 ## Not in v0.1
 
-- iTerm2 plain tabs, tmux, other terminals (delivery rules for them are known, see
-  [reports/delivery-tests.md](reports/delivery-tests.md)).
+- Terminals other than herdr, tmux and iTerm2.
 - Faster preview to hide the 2 s lag.
 - Region capture by Showtell itself, OCR terms from screenshots.

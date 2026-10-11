@@ -34,6 +34,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Showtell finds Claude Code sessions in iTerm2 tabs and pastes your message into the one you opened.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Showtell transcribes what you say, on this Mac, and sends it to the Claude Code session you opened.</string>
 </dict>

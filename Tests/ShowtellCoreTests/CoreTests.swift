@@ -101,6 +101,28 @@ import Testing
     }
 }
 
+@Suite struct TerminalSessionTests {
+    @Test func claudeStatusesMap() {
+        #expect(TerminalSessions.status("idle") == .idle)
+        #expect(TerminalSessions.status("busy") == .working)
+        #expect(TerminalSessions.status("waiting") == .blocked)  // a dialog is open: don't paste
+        #expect(TerminalSessions.status(nil) == .unknown)
+    }
+
+    @Test func herdrWinsWhenASessionIsSeenTwice() {
+        let inHerdr = HerdrAgent(paneID: "w1:p1", terminalID: "t1", status: .idle, sessionID: "s1")
+        let sameInTmux = HerdrAgent(paneID: "tmux:%1", terminalID: "tty:/dev/ttys001", status: .idle, sessionID: "s1")
+        let onlyInITerm = HerdrAgent(paneID: "iterm:ABC", terminalID: "tty:/dev/ttys002", status: .idle, sessionID: "s2")
+        #expect(AllSessions.merge([inHerdr], [sameInTmux, onlyInITerm]).map(\.paneID) == ["w1:p1", "iterm:ABC"])
+    }
+
+    @Test func ttyListsParse() {
+        #expect(TerminalSessions.pairs("/dev/ttys003 %1\n/dev/ttys004 %2\n") == ["/dev/ttys003": "%1", "/dev/ttys004": "%2"])
+        #expect(TerminalSessions.handles(pane: "tmux:%1") && TerminalSessions.handles(pane: "iterm:X"))
+        #expect(!TerminalSessions.handles(pane: "w1:p1"))
+    }
+}
+
 @Suite struct SettingsTests {
     @Test func shortcutLabels() {
         #expect(Shortcut.tap("leftOption").label == "Left ⌥ tap")
