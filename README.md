@@ -67,3 +67,9 @@ pane that moved still gets it.
 
 - The streaming recogniser with word boosting lags about 2 s behind your voice.
 - herdr only, for now.
+
+## Docs
+
+- [Spec](docs/spec.md) and [plan](docs/plan.md)
+- Reports: [delivery tests](docs/reports/delivery-tests.md), [study of existing tools](docs/reports/study.md), [build verification](docs/reports/build-verification.md)
+- Illustrated research: open [docs/research/index.html](docs/research/index.html) in a browser

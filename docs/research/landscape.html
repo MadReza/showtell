@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showtell · Landscape</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+  <header class="pt-12 pb-6">
+    <div class="eyebrow">Page 2 of 5 · Landscape (stars checked through the GitHub API, curated lists, HN)</div>
+    <h1 class="text-4xl font-extrabold tracking-tight mt-2">The parts are popular. Nobody has put them together.</h1>
+    <p class="text-lg mt-3 lede">Big projects own <b>one</b> part each. The few that combine two or three are new and small (2–80★). Reddit blocks our network, so it isn't covered.</p>
+  </header>
+  <section class="!border-t-0 !pt-0">
+    <h3 class="text-lg font-bold mt-6">Closest competitors (by fit, not stars)</h3>
+    <div class="flex flex-wrap gap-4 text-sm mt-2 opacity-80">
+      <span><span class="dot d-yes"></span> yes</span><span><span class="dot d-part"></span> partly</span><span><span class="dot d-no"></span> no</span>
+    </div>
+    <div class="overflow-x-auto mt-3 rounded-box bg-base-200">
+      <table class="table matrix">
+        <thead><tr><th>Tool</th><th>Traction</th><th>Voice</th><th>Screens</th><th>In order</th><th>Into a session you pick</th><th>No focus</th><th>Custom words</th></tr></thead>
+        <tbody>
+          <tr class="goal-row font-semibold"><td>Showtell (goal)</td><td>—</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://snippai.dev">SnippAI</a><div class="text-xs opacity-60">⌥⇧4 region → voice panel → into your running CC session. Closed, $8.99. iTerm2 / Terminal.app</div></td><td>HN, Jul 2026</td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td></tr>
+          <tr><td><a href="https://github.com/T0mSIlver/localvoxtral">localvoxtral</a><div class="text-xs opacity-60">streaming local dictation for CLI agents → herdr socket, cmux, CC mod, iTerm2. Vocab from repo file names + <code>.github/dictation.md</code></div></td><td>59★ · MIT<div class="text-xs opacity-60">you tried it 10 Oct</div></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://deiko.app">Deiko</a><div class="text-xs opacity-60">double-tap ⌥, talk while pointing; every thing you point at is cropped and labeled in order → brief. You drag it in by hand</div></td><td>HN, Sep 2026 · OSS</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/hashfunction/MarkuprPlus">MarkuprPlus</a><div class="text-xs opacity-60">record a window and narrate; each mark becomes a PNG with timestamp-aligned narration → markdown report</div></td><td>79★ · MIT</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/xingbofeng/VoxFlow">VoxFlow</a><div class="text-xs opacity-60">voice keyboard + screenshot workbench; "speak an agent name and task → dispatch to registered sessions"</div></td><td>47★ · GPL-3</td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://github.com/APIANT/shellshot">ShellShot</a><div class="text-xs opacity-60">region + arrows + typed question → iTerm2 Python API with a picker over live CC sessions</div></td><td>1★ · HN</td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/ethanplusai/jarvis">jarvis</a><div class="text-xs opacity-60">voice assistant that watches CC sessions and steers them through each session's inbox socket</div></td><td>847★</td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://superwhisper.com/claude-code">Superwhisper for Claude Code</a><div class="text-xs opacity-60">floating window that sends your voice to the agent "when it needs more information"</div></td><td>paid incumbent</td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://support.claude.com/en/articles/12626668-use-quick-entry-with-claude-desktop-on-mac">Claude Quick Entry</a> / <a href="https://code.claude.com/docs/en/remote-control">Remote Control</a><div class="text-xs opacity-60">the UX to copy (Quick Entry → Desktop chats only) / sends images into a live terminal session, but from a browser</div></td><td>Anthropic</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/FinalAngel/claude-annotate">claude-annotate</a> · <a href="https://github.com/jonathan-oralart/show-and-tell">show-and-tell</a><div class="text-xs opacity-60">ordered note batch over channels (localhost pages) · pins and notes → clipboard (name close to ours!)</div></td><td>1★ · 0★</td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-no"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="text-lg font-bold mt-8">The popular building blocks (one part each)</h3>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Voice</div>
+        <p class="text-sm"><a href="https://github.com/cjpais/Handy">Handy</a> <b>33k★</b> MIT: the tool HN recommends most for agents · <a href="https://github.com/altic-dev/FluidVoice">FluidVoice</a> <b>12k★</b> (custom dictionary) · <a href="https://github.com/OpenWhispr/openwhispr">OpenWhispr</a> 9.2k★ · <a href="https://github.com/Beingpax/VoiceInk">VoiceInk</a> 6.7k★ · <a href="https://github.com/TypeWhisper/typewhisper-mac">TypeWhisper</a> 1.8k★ (term packs) · <a href="https://github.com/Starmel/OpenSuperWhisper">OpenSuperWhisper</a> 3k★. <span class="opacity-70">All of them paste where the cursor is, with focus needed and no target choice.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Talking with agents</div>
+        <p class="text-sm"><a href="https://github.com/mbailey/voicemode">voicemode</a> 1.4k★ (the agent starts the conversation) · <a href="https://github.com/spaceamoeba-t/tapq">tapq</a> 590★ (AirPods, only at stop/permission hooks) · <a href="https://github.com/jarrodwatts/claude-stt">claude-stt</a> 364★ (types into the focused window) · <a href="https://github.com/slopus/happy">Happy</a> 24k★ (its own sessions). <span class="opacity-70">Back-and-forth conversation, not show and tell.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Visual feedback</div>
+        <p class="text-sm"><a href="https://github.com/aidenybai/react-grab">react-grab</a> 7.7k★ · <a href="https://github.com/benjitaylor/agentation">agentation</a> 4.9k★ · <a href="https://github.com/rixinhahaha/snip">Snip</a> 341★ · <a href="https://github.com/openclaw/Peekaboo">Peekaboo</a> 5.3k★ (the agent pulls screenshots). <span class="opacity-70">Web pages only, or the agent pulls; no voice.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Your terminal: herdr</div>
+        <p class="text-sm"><a href="https://github.com/herdrdev/herdr">herdr</a> <b>43k★</b> · add-ons: <a href="https://github.com/AltanS/collie">collie</a> 1.3k★ (phone → herdr panes, with voice) · <a href="https://github.com/penso/herdr-gpui">herdr-gpui</a> 1.1k★ ("Send to agent") · <a href="https://github.com/persiyanov/herdr-reviewr">herdr-reviewr</a> 860★. <span class="opacity-70">Showtell can be another herdr add-on.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Screen-aware assistants</div>
+        <p class="text-sm"><a href="https://github.com/screenpipe/screenpipe">screenpipe</a> 22k★ · <a href="https://github.com/Sylinko/Everywhere">Everywhere</a> 6.3k★ · <a href="https://github.com/sohzm/cheating-daddy">cheating-daddy</a> 5.6k★ · Highlight, Cluely. <span class="opacity-70">Each answers in its own chat and can't reach a Claude Code session.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Agent terminals</div>
+        <p class="text-sm"><a href="https://github.com/warpdotdev/warp">Warp</a> 65k★ (voice + images, but only for its own agent) · <a href="https://github.com/manaflow-ai/cmux">cmux</a> 28k★ · <a href="https://github.com/superset-sh/superset">superset</a> 15k★ · <a href="https://github.com/amantus-ai/vibetunnel">vibetunnel</a> 4.7k★. <span class="opacity-70">None of them has capture with narration.</span></p></div></div>
+    </div>
+
+    <h3 class="text-lg font-bold mt-8">What people complain about (HN threads)</h3>
+    <div class="grid sm:grid-cols-2 gap-3 mt-3">
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>"Five steps, dozens of times a day."</b> Screenshot → save → alt-tab → drag → type → enter. Every tool above was built because of this.</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>"This one" is ambiguous.</b> Words can't say which of nine buttons you mean. People fix it by pointing while talking (Deiko), drawing arrows (ShellShot) or attaching selectors (react-grab).</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Jargon gets mis-heard.</b> Custom dictionaries are the most requested feature. Tricks: vocabulary from repo files (localvoxtral), or a screenshot of the window so the LLM gets spellings right (FreeFlow).</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Native <code>/voice</code> is weak.</b> About 500 ms of lag drops the first words, it only works while the terminal is focused, and there are no custom words. People prefer a dictation tool that works system-wide.</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Only iTerm2 is supported.</b> Every tool that types into a terminal does iTerm2 (sometimes Terminal.app) and nothing else. <b>None supports herdr</b> except localvoxtral (text only).</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Local over cloud.</b> Strong preference for on-device models (Parakeet, Whisper). Tools that send telemetry get called out.</div></div>
+    </div>
+
+    <div class="card bg-base-200 mt-5"><div class="card-body p-5"><div class="eyebrow">Ideas to borrow</div>
+      <ul class="list-disc pl-5 text-sm space-y-1">
+        <li><b>localvoxtral:</b> word list from repo file names + a <code>.github/dictation.md</code> per repo; send to a session by speaking its name ("send that to payments").</li>
+        <li><b>MarkuprPlus / Deiko:</b> one screenshot + its piece of narration as the basic unit. Deiko crops to what you were pointing at.</li>
+        <li><b>ShellShot:</b> a session picker over every live Claude Code session, plus arrows drawn on the screenshot.</li>
+        <li><b>Quick Entry / Codex Appshots:</b> the overlay design. Appshots also captures the window's off-screen text along with the image.</li>
+      </ul>
+      <p class="text-sm mt-3"><b>What's still open:</b> several screenshots kept <b>in order</b> with live narration, delivered to a session <b>you pick</b> in <b>herdr and iTerm2</b> without focusing it, with <b>custom words</b>. Nobody has all of that. The biggest risk is Anthropic letting Quick Entry target Claude Code sessions.</p>
+    </div></div>
+  </section>
+
+  <div id="pager"></div>
+</main>
+<script src="nav.js"></script>
+</body>
+</html>
