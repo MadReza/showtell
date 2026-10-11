@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ShowtellCore
 
 /// Global shortcuts through Carbon's RegisterEventHotKey: no Accessibility or
 /// Input Monitoring permission needed.
@@ -42,21 +43,6 @@ final class HotKeys {
         UnregisterEventHotKey(ref)
         handlers[id] = nil
     }
-
-    /// "⌃⌥Space" for menus and hints.
-    static func describe(keyCode: UInt32, modifiers: UInt32) -> String {
-        let names: [UInt32: String] = [49: "Space", 36: "Return", 53: "Esc", 48: "Tab", 51: "⌫"]
-        return describe(modifiers: modifiers) + (names[keyCode] ?? "key \(keyCode)")
-    }
-
-    static func describe(modifiers: UInt32) -> String {
-        var s = ""
-        if modifiers & UInt32(controlKey) != 0 { s += "⌃" }
-        if modifiers & UInt32(optionKey) != 0 { s += "⌥" }
-        if modifiers & UInt32(shiftKey) != 0 { s += "⇧" }
-        if modifiers & UInt32(cmdKey) != 0 { s += "⌘" }
-        return s
-    }
 }
 
 /// A tap of one modifier key on its own (for example the left Option key): press and release
@@ -66,10 +52,6 @@ final class ModifierTap {
     static let keyCodes: [String: UInt16] = [
         "leftOption": 58, "rightOption": 61, "leftControl": 59, "rightControl": 62,
         "leftCommand": 55, "rightCommand": 54, "leftShift": 56, "rightShift": 60,
-    ]
-    static let labels: [String: String] = [
-        "leftOption": "Left ⌥", "rightOption": "Right ⌥", "leftControl": "Left ⌃", "rightControl": "Right ⌃",
-        "leftCommand": "Left ⌘", "rightCommand": "Right ⌘", "leftShift": "Left ⇧", "rightShift": "Right ⇧",
     ]
 
     private let keyCode: UInt16
@@ -122,8 +104,42 @@ final class ModifierTap {
     }
 
     /// Whether this exact key (left or right) is down, from the device-dependent flag bits.
-    private static func isDown(_ code: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
+    static func isDown(_ code: UInt16, _ flags: NSEvent.ModifierFlags) -> Bool {
         let bits: [UInt16: UInt] = [58: 0x20, 61: 0x40, 59: 0x01, 62: 0x2000, 55: 0x08, 54: 0x10, 56: 0x02, 60: 0x04]
         return flags.rawValue & (bits[code] ?? 0) != 0
+    }
+}
+
+/// Listens for one `Shortcut`: Carbon for a key chord, `ModifierTap` for a lone modifier.
+final class ShortcutBinding {
+    private let hotKeys: HotKeys
+    private var id: UInt32?
+    private var tap: ModifierTap?
+    /// False when another app already owns the chord.
+    let ok: Bool
+
+    init(_ shortcut: Shortcut, hotKeys: HotKeys, handler: @escaping () -> Void) {
+        self.hotKeys = hotKeys
+        if let name = shortcut.tap {
+            tap = ModifierTap(name: name)
+            tap?.onTap = handler
+            tap?.start()
+            ok = tap != nil
+        } else if let code = shortcut.keyCode {
+            id = hotKeys.register(keyCode: code, modifiers: shortcut.modifiers, handler: handler)
+            ok = id != nil
+        } else {
+            ok = false
+        }
+    }
+
+    /// Key monitors added before Accessibility was granted may stay deaf; add them again.
+    func refresh() { tap?.start() }
+
+    func stop() {
+        hotKeys.unregister(id)
+        id = nil
+        tap?.stop()
+        tap = nil
     }
 }
