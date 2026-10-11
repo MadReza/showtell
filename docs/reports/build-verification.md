@@ -37,3 +37,17 @@ Note: with Command Line Tools only, `swift test` sometimes fails once with "plug
 - **Accessibility permission** so the bar hides on ⌘⌃⇧3/4. Without it, the bar is still excluded
   from captures.
 - Picking a session from the menu (tested only by writing `settings.json`).
+
+## Live tests with you, 11 Oct 2026
+
+Four read-aloud tests through the real microphone, into this Claude session.
+
+| Test | Result | Cause | Fix |
+|---|---|---|---|
+| Plain speech | "how well" → "Showtell" | the seeded alias `Showtell: show tell` forced the term onto similar words | no aliases in the seeded list; stricter boost (similarity and confidence 0.7, acoustic rescue off) |
+| Your terms | all right; "Herdr" capitalised, "in" before Claude Code dropped | rescorer replaces the span "in Claude Code" | terms are restored to the case you wrote them; the dropped "in" remains |
+| Two screenshots | first right, second 3 words late | FluidAudio regroups words per batch, so a word split across batches counted twice, and the lag guess overruled real timings | words counted from token boundaries; once speech past a shot is timed (always by the end), the timings decide |
+| Talking through a shot | shot right; "header" → "herdr", "four zero four" → "04", "3:45 PM" → "345 p.m." | boost too eager; number formatting is the model's | stricter boost; numbers left as they are |
+
+Checked on synthesized recordings with the new settings: "how well", "header", herdr, Showtell and
+Claude Code all come out right.

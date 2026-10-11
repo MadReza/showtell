@@ -25,10 +25,22 @@ import Testing
 @Suite struct ComposerTests {
     @Test func placesShotByWordTiming() {
         var c = Composer()
-        c.updateTranscript("this", newWordEndTimes: [0.4])
+        c.updateTranscript("this", newWordStartTimes: [0.0])
         c.addShot(URL(fileURLWithPath: "/a.png"), at: 1.2)  // recogniser lags: only "this" known
-        c.updateTranscript("this button is cut off", newWordEndTimes: [0.9, 1.1, 1.6, 1.9])
+        c.updateTranscript("this button is cut off", newWordStartTimes: [0.6, 0.95, 1.3, 1.7])
         #expect(c.render() == "this button is [📷 1] cut off")
+    }
+
+    @Test func timingsOverruleTheLagGuess() {
+        // A pause after the shot lets the recogniser catch up, so one lag later the transcript
+        // already holds words spoken after the shot. The word timings put it back in place.
+        var c = Composer(lag: 2)
+        c.updateTranscript("now the second one", newWordStartTimes: [0.0, 0.3, 0.5, 0.9], at: 1.5)
+        c.addShot(URL(fileURLWithPath: "/a.png"), at: 3.0)
+        c.updateTranscript("now the second one should land after", at: 5.2)
+        #expect(c.render() == "now the second one should land after [📷 1]")  // guess, not yet timed
+        c.updateTranscript("now the second one should land after the word", newWordStartTimes: [4.0, 4.3, 4.6], at: 5.6)
+        #expect(c.render() == "now the second one [📷 1] should land after the word")
     }
 
     @Test func placesShotOneLagLaterWithoutTimings() {

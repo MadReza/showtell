@@ -177,7 +177,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func transcriptUpdated(_ text: String, _ ends: [Double], _ time: Double, generation gen: Int) {
         guard gen == generation, state != .idle else { return }
-        composer.updateTranscript(text, newWordEndTimes: ends, at: time)
+        composer.updateTranscript(text, newWordStartTimes: ends, at: time)
         model.text = composer.render()
     }
 
@@ -223,14 +223,15 @@ final class AppController: NSObject, NSMenuDelegate {
             model.phase = .info("Finishing…")
             let final = await speech.stop()
             if gen == generation {
-                composer.updateTranscript(final.text, newWordEndTimes: final.wordEnds, at: final.time)
+                composer.updateTranscript(final.text, newWordStartTimes: final.wordStarts, at: final.time)
                 composer.finish(at: final.time)
                 model.text = composer.render()
             }
         }
         speechStart = nil
         speechListening = false
-        let rules = storage.replacementRules()
+        // Replacements, then each of your terms in the case you wrote it ("Herdr" → "herdr").
+        let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: target.cwd).map { ($0.text, $0.text) }
         let pieces = composer.pieces().map { piece -> Piece in
             if case .text(let s) = piece { return .text(Vocabulary.applyReplacements(s, rules)) }
             return piece

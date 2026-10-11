@@ -5,7 +5,7 @@ import ShowtellCore
 let arguments = CommandLine.arguments
 if arguments.count >= 3, arguments[1] == "--transcribe" {
     let engine = SpeechEngine { state in print("speech:", state) }
-    let terms = arguments.dropFirst(3).map { VocabularyTerm($0) }
+    let terms = Vocabulary.simpleListTerms(arguments.dropFirst(3).joined(separator: "\n"))  // "herdr: herder"
     Task {
         let started = Date()
         await engine.load()
