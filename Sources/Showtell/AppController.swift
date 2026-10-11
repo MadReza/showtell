@@ -9,8 +9,9 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private let storage = Storage()
     private var settings: Settings
-    private let herdr = HerdrClient()
-    private lazy var outbox = Outbox(transport: herdr)
+    private let sessions = AllSessions()
+    private var terminalSessions: [HerdrAgent] = []
+    private lazy var outbox = Outbox(transport: sessions)
     private var speech: SpeechEngine!
     private var speechState = SpeechEngine.State.notLoaded
     private let hotKeys = HotKeys()
@@ -91,6 +92,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
 
         Task { await speech.load() }
+        _ = sessionsNow()  // look up tmux and iTerm2 sessions early, so the first menu shows them
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted {
             ScreenshotKeyMonitor.askForPermission()
             watchForTrust()
@@ -371,12 +373,12 @@ final class AppController: NSObject, NSMenuDelegate {
     private func checkTargetStillThere(_ target: PinnedTarget) {
         Task {
             do {
-                let agents = try await herdr.listAgents()
+                let agents = try await sessions.listAgents()
                 if target.locate(in: agents) == nil, state == .recording {
-                    model.phase = .error("\(target.name) isn't running in herdr any more: pick another session")
+                    model.phase = .error("\(target.name) isn't running any more: pick another session")
                 }
             } catch {
-                if state == .recording { model.phase = .error("herdr isn't reachable: \(error)") }
+                if state == .recording { model.phase = .error("Sessions can't be listed: \(error)") }
             }
         }
     }
@@ -473,9 +475,9 @@ final class AppController: NSObject, NSMenuDelegate {
         cursor.state = settings.insertAtCursor ? .on : .off
         cursor.toolTip = "Paste into whatever app you are typing in, without pressing Enter"
         menu.addItem(cursor)
+        let agents = sessionsNow()
+        if agents.isEmpty { menu.addItem(disabled("No Claude sessions in herdr, tmux or iTerm2")) }
         do {
-            let agents = try herdr.listAgentsNow().filter(\.isClaude)
-            if agents.isEmpty { menu.addItem(disabled("No Claude sessions in herdr")) }
             for agent in agents {
                 let mi = item("\(agent.folderName) — \(agent.displayName)", #selector(pick(_:)))
                 mi.representedObject = agent.paneID
@@ -487,9 +489,19 @@ final class AppController: NSObject, NSMenuDelegate {
             if let p = settings.pinned, p.locate(in: agents) == nil {
                 menu.addItem(disabled("\(p.name) (not running)"))
             }
-        } catch {
-            menu.addItem(disabled("herdr isn't running"))
         }
+    }
+
+    /// Sessions for a menu, built on the spot: herdr answers in milliseconds, while tmux and
+    /// iTerm2 (an AppleScript round trip, and a permission prompt the first time) are looked up in
+    /// the background and shown from the last lookup.
+    private func sessionsNow() -> [HerdrAgent] {
+        let terminals = sessions.terminals
+        Task { [weak self] in
+            let found = await Task.detached { terminals.listNow() }.value
+            self?.terminalSessions = found
+        }
+        return AllSessions.merge((try? sessions.herdr.listAgentsNow()) ?? [], terminalSessions).filter(\.isClaude)
     }
 
     private var speechStatus: String {
@@ -522,7 +534,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     @objc private func pick(_ sender: NSMenuItem) {
         guard let pane = sender.representedObject as? String,
-              let agent = try? herdr.listAgentsNow().first(where: { $0.paneID == pane }) else { return }
+              let agent = sessionsNow().first(where: { $0.paneID == pane }) else { return }
         settings.pinned = PinnedTarget(agent: agent)
         settings.insertAtCursor = false
         storage.save(settings)

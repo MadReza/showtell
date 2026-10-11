@@ -23,13 +23,13 @@ func fail(_ message: String) -> Never {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
-let client = HerdrClient()
+let client = AllSessions()
 
 switch args.first {
 case "sessions":
     do {
         let agents = try await client.listAgents().filter(\.isClaude)
-        if agents.isEmpty { print("no Claude sessions in herdr") }
+        if agents.isEmpty { print("no Claude sessions in herdr, tmux or iTerm2") }
         for a in agents {
             print("\(a.paneID)\t\(a.status.rawValue)\t\(a.sessionID ?? "-")\t\(a.folderName)\t\(a.displayName)")
         }
@@ -53,7 +53,7 @@ case "send":
     do {
         let agents = try await client.listAgents()
         guard let agent = agents.first(where: { $0.paneID == key || $0.sessionID == key }) else {
-            fail("no herdr agent with pane or session \(key)")
+            fail("no Claude session with pane or session \(key)")
         }
         let outbox = Outbox(transport: client)
         await outbox.setEventHandler { event in print("·", event) }

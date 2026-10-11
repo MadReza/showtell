@@ -1,8 +1,9 @@
 # Showtell
 
 Talk and take screenshots while you look at your app. Showtell puts your words and the
-screenshots, in the order you took them, into the Claude Code session you opened in
-[herdr](https://github.com/herdrdev/herdr), or pastes them wherever your cursor is. The terminal
+screenshots, in the order you took them, into the Claude Code session you opened (in
+[herdr](https://github.com/herdrdev/herdr), tmux or a plain iTerm2 tab), or pastes them wherever
+your cursor is. The terminal
 never has to come forward.
 
 Everything runs on your Mac: speech is FluidAudio's streaming Parakeet model, with your own
@@ -92,6 +93,13 @@ Claude Code attaches the image. It pauses about 0.8 s after each image, then pre
 `pane.send_keys`. Before every message it finds the session again by its Claude session id, so a
 pane that moved still gets it.
 
+**tmux and iTerm2:** sessions are found from `~/.claude/sessions/<pid>.json` (session id, cwd,
+name, status) and the process's terminal, matched against tmux's panes and iTerm2's sessions. tmux
+gets `paste-buffer -p` per piece and `send-keys Enter`; iTerm2 gets AppleScript `write text` with
+paste markers, then a carriage return. A session waiting on a dialog (status `waiting`) is not
+pasted into. macOS asks once for permission to control iTerm2. A session that is in herdr is
+always reached through herdr.
+
 **At the cursor:** each part goes through the clipboard and a synthesized ⌘V, in order; your
 clipboard is put back afterwards.
 
@@ -100,7 +108,8 @@ clipboard is put back afterwards.
 - The streaming recogniser with word boosting lags about 2 s behind your voice.
 - A boosted multi-word term can swallow the word before it ("in Claude Code" → "Claude Code").
 - Numbers come out as the model writes them ("four zero four" → "04").
-- Sessions: herdr only, for now.
+- Sessions in other terminals (Terminal.app, Ghostty, Warp…) aren't reachable yet: use insert at
+  the cursor there.
 
 ## Docs
 

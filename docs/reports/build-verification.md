@@ -63,5 +63,7 @@ Claude Code all come out right.
 | Live permission status in Settings | stale entry from the ad-hoc build reproduced and cleared | status follows System Settings within a second |
 | Insert at the cursor | `showtell-cli target cursor`, then a spoken sentence (via `say`) with a clipboard image into TextEdit | text and image pasted in place; transcript exact. TextEdit's own "convert to RTFD" prompt for a plain `.rtf` stopped the last piece, a TextEdit quirk |
 
+| tmux and iTerm2 sessions | throwaway `claude --model haiku` in a tmux session and in a new iTerm2 window; `showtell-cli send <pane> --submit "…" @red.png "then" @blue.png` | found as `tmux:%1` / `iterm:<id>` with name and status; chips in order; Claude: "Red, Blue" and "Blue, Red" |
+
 Lesson from the cursor test: the paste goes to whichever app is in front. In one run TextEdit
 didn't come forward and the paste landed in iTerm2, so scripted tests now check the front app first.
