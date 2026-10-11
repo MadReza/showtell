@@ -25,7 +25,10 @@ sessions; Showtell's job is to get many inputs into it reliably.
    delete markers.
 5. **Send.** Press the hotkey again. The message is delivered and submitted. You can start the
    next message right away; messages are delivered in order.
-6. **Cancel.** ⌃⌥⌫ throws the recording away.
+6. **Or insert at the cursor.** Pick "Insert at the cursor" instead of a session (menu or the bar's
+   drop-down): the message is pasted into whatever app you are typing in, screenshots included,
+   without pressing Enter; your clipboard is restored afterwards.
+7. **Cancel.** ⌃⌥⌫ throws the recording away.
 
 ## Requirements
 
