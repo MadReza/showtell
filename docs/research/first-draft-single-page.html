@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showtell Research</title>
+<script type="application/json" data-lavish-revisions>
+[
+ {
+  "id": "r1",
+  "label": "Delivery test",
+  "timestamp": "2026-10-10T17:15:00Z",
+  "summary": "Ran the delivery test in tmux, herdr and iTerm2; added results"
+ },
+ {
+  "id": "r2",
+  "label": "Other paths",
+  "timestamp": "2026-10-10T17:22:00Z",
+  "summary": "Tested channel (C), MCP inbox tool (D) and socket nudge; updated decision"
+ },
+ {
+  "id": "r3",
+  "label": "Landscape redo",
+  "timestamp": "2026-10-10T17:40:00Z",
+  "summary": "Rebuilt section 3 with checked star counts, curated lists and HN threads"
+ },
+ {
+  "id": "r4",
+  "label": "Plan revised",
+  "timestamp": "2026-10-10T17:50:00Z",
+  "summary": "Base switched to localvoxtral; revised steps and choices"
+ },
+ {
+  "id": "r5",
+  "label": "Setup note",
+  "timestamp": "2026-10-10T19:15:00Z",
+  "summary": "Why localvoxtral didn't see your sessions: it needs its Claude Code plugin, then a session restart"
+ },
+ {
+  "id": "r6",
+  "label": "Context gate",
+  "timestamp": "2026-10-10T19:58:00Z",
+  "summary": "Joins were blocked because both Context settings are off"
+ }
+]
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, li, td, th, figcaption, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-100); color: var(--color-base-content); font-size: 17px; line-height: 1.6; }
+  h2 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .35rem; }
+  .lede { opacity: .78; max-width: 62ch; }
+  section { padding-block: 2.5rem; border-top: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent); }
+  .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .75rem; font-weight: 700; color: var(--color-primary); }
+  figure { background: var(--color-base-200); border-radius: 1rem; padding: 1.25rem; margin-top: 1.25rem; }
+  figcaption { font-size: .9rem; opacity: .7; margin-top: .6rem; }
+  /* SVG tokens */
+  svg text { font-family: ui-sans-serif, system-ui, sans-serif; fill: var(--color-base-content); }
+  .t-sm { font-size: 13px; } .t-md { font-size: 15px; font-weight: 600; } .t-lg { font-size: 18px; font-weight: 700; }
+  .t-dim { opacity: .65; }
+  .t-pc { fill: var(--color-primary-content) !important; }
+  .box { fill: var(--color-base-100); stroke: var(--color-base-content); stroke-opacity: .22; stroke-width: 1.5; }
+  .box-p { fill: color-mix(in oklab, var(--color-primary) 16%, var(--color-base-100)); stroke: var(--color-primary); stroke-width: 2; }
+  .box-a { fill: color-mix(in oklab, var(--color-accent) 16%, var(--color-base-100)); stroke: var(--color-accent); stroke-width: 2; }
+  .fill-p { fill: var(--color-primary); } .fill-a { fill: var(--color-accent); } .fill-s { fill: var(--color-secondary); }
+  .ink { fill: var(--color-base-content); }
+  .wire { stroke: var(--color-base-content); stroke-opacity: .45; stroke-width: 2; fill: none; }
+  .wire-p { stroke: var(--color-primary); stroke-width: 2.5; fill: none; }
+  .wire-dash { stroke-dasharray: 5 5; }
+  .wave { fill: var(--color-base-content); opacity: .35; }
+  .icon { fill: none; stroke: var(--color-base-content); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-p { fill: none; stroke: var(--color-primary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  /* coverage matrix */
+  .dot { display: inline-block; width: .8rem; height: .8rem; border-radius: 999px; vertical-align: middle; }
+  .d-yes { background: var(--color-success); }
+  .d-part { background: linear-gradient(90deg, var(--color-warning) 50%, transparent 50%); border: 2px solid var(--color-warning); }
+  .d-no { border: 2px solid color-mix(in oklab, var(--color-base-content) 30%, transparent); }
+  .matrix td, .matrix th { text-align: center; }
+  .matrix td:first-child, .matrix th:first-child { text-align: left; }
+  .goal-row { background: color-mix(in oklab, var(--color-primary) 12%, transparent); }
+  a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+  code { font-size: .88em; background: var(--color-base-200); padding: .1em .35em; border-radius: .35em; }
+</style>
+</head>
+<body>
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+  <!-- HERO -->
+  <header class="pt-12 pb-8">
+    <div class="eyebrow">Research · 10 Oct 2026</div>
+    <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mt-2">Showtell</h1>
+    <p class="text-xl mt-3 lede">Talk and take screenshots while you look at an app. The narration and screenshots go into the <b>Claude Code terminal session you choose</b>, with each screenshot where you took it, and you never switch to the terminal.</p>
+
+    <div class="grid sm:grid-cols-3 gap-3 mt-8">
+      <div class="card bg-base-200"><div class="card-body p-5">
+        <div class="eyebrow">Verdict</div>
+        <p class="text-lg font-semibold leading-snug">Nobody has built this exact tool.</p>
+        <p class="text-sm opacity-75">Checked again with stars and HN: popular projects (Handy 33k★, herdr 43k★, voicemode 1.4k★) each own one part. The few that combine parts are small and new: SnippAI, localvoxtral, Deiko, MarkuprPlus.</p>
+      </div></div>
+      <div class="card bg-base-200"><div class="card-body p-5">
+        <div class="eyebrow">Hardest part</div>
+        <p class="text-lg font-semibold leading-snug">Delivery, not dictation.</p>
+        <p class="text-sm opacity-75">Speech-to-text is a solved problem. The hard part is getting text with images into a Claude Code session that is already running.</p>
+      </div></div>
+      <div class="card bg-base-200"><div class="card-body p-5">
+        <div class="eyebrow">Best base to build on (revised)</div>
+        <p class="text-lg font-semibold leading-snug">Extend localvoxtral.</p>
+        <p class="text-sm opacity-75">Swift, MIT, built for coding agents. It already streams local voice, handles custom words and sends to herdr and iTerm2 sessions. Missing: screenshots. (Was: fork OpenSuperWhisper.)</p>
+      </div></div>
+    </div>
+  </header>
+
+  <!-- 1. THE IDEA -->
+  <section id="idea">
+    <div class="eyebrow">1 · The idea in one picture</div>
+    <h2>Capture → align → correct → deliver</h2>
+    <p class="lede">The three things you already do by hand (dictate, screenshot, paste) become one recording. At the end it goes to the terminal you picked, not to whichever window is in front.</p>
+    <figure>
+      <svg viewBox="0 0 960 300" width="100%" role="img" aria-labelledby="f1t">
+        <title id="f1t">Showtell pipeline: voice and screenshots are merged on a timeline, vocabulary-corrected, and delivered to a chosen Claude Code session</title>
+        <!-- sources -->
+        <g id="src-voice"><title>Voice: hotkey, continuous dictation</title>
+          <rect class="box" x="10" y="40" width="170" height="80" rx="14"/>
+          <path class="icon-p" d="M40 62 v18 a8 8 0 0 0 16 0 v-18 a8 8 0 0 0 -16 0 z M34 80 a14 14 0 0 0 28 0 M48 94 v8"/>
+          <text class="t-md" x="74" y="76">Voice</text>
+          <text class="t-sm t-dim" x="74" y="96">hold or toggle</text>
+        </g>
+        <g id="src-shot"><title>Screenshots: hotkey or clipboard watch</title>
+          <rect class="box" x="10" y="180" width="170" height="80" rx="14"/>
+          <path class="icon-p" d="M32 206 h10 l4 -6 h12 l4 6 h10 v30 h-40 z"/><circle class="icon-p" cx="52" cy="220" r="7"/>
+          <text class="t-md" x="88" y="216">Screens</text>
+          <text class="t-sm t-dim" x="88" y="236">⌘⇧4 / clipboard</text>
+        </g>
+        <!-- merge -->
+        <path class="wire" d="M180 80 C 230 80, 230 150, 270 150"/>
+        <path class="wire" d="M180 220 C 230 220, 230 150, 270 150"/>
+        <g id="stage-align"><title>Timeline alignment: word timestamps place each screenshot</title>
+          <rect class="box-p" x="270" y="105" width="190" height="90" rx="14"/>
+          <text class="t-md" x="290" y="140">Align on timeline</text>
+          <text class="t-sm t-dim" x="290" y="162">word timestamps ↔</text>
+          <text class="t-sm t-dim" x="290" y="180">screenshot times</text>
+        </g>
+        <path class="wire" d="M460 150 H 500"/>
+        <g id="stage-vocab"><title>Vocabulary correction: prompt bias, keyword boost, replacements, optional LLM pass</title>
+          <rect class="box-p" x="500" y="105" width="180" height="90" rx="14"/>
+          <text class="t-md" x="520" y="140">Fix vocabulary</text>
+          <text class="t-sm t-dim" x="520" y="162">your known words</text>
+          <text class="t-sm t-dim" x="520" y="180">+ repo terms</text>
+        </g>
+        <path class="wire-p" d="M680 150 H 720"/>
+        <!-- targets -->
+        <g id="targets"><title>Pick a target: any running Claude Code session</title>
+          <rect class="box" x="720" y="30" width="230" height="70" rx="12"/>
+          <text class="t-sm" x="740" y="60">claude · guildmaster</text>
+          <text class="t-sm t-dim" x="740" y="80">iTerm2 · idle</text>
+          <rect class="box-a" x="720" y="115" width="230" height="70" rx="12"/>
+          <text class="t-md" x="740" y="145">claude · showtell  ✓</text>
+          <text class="t-sm t-dim" x="740" y="165">tmux pane 2 · chosen</text>
+          <rect class="box" x="720" y="200" width="230" height="70" rx="12"/>
+          <text class="t-sm" x="740" y="230">claude · firstmate</text>
+          <text class="t-sm t-dim" x="740" y="250">herdr · busy</text>
+        </g>
+        <path class="wire-p" d="M700 150 C 708 150, 712 150, 720 150"/>
+        <text class="t-sm t-dim" x="270" y="290">no focus switch · terminal stays in the background</text>
+      </svg>
+      <figcaption>The two middle stages are the new parts. Capture and dictation already exist in OpenSuperWhisper.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 2. INTERLEAVING -->
+  <section id="interleave">
+    <div class="eyebrow">2 · Screenshots in the right place</div>
+    <h2>Timestamps decide where each image goes</h2>
+    <p class="lede">The local speech engines give a timestamp for every word (whisper.cpp <code>WhisperTimings</code>, FluidAudio/Parakeet token timings). Each screenshot is inserted at the nearest sentence boundary to the moment you took it, so it lands at the start, in the middle or at the end exactly as you took it.</p>
+    <figure>
+      <svg viewBox="0 0 960 270" width="100%" role="img" aria-labelledby="f2t">
+        <title id="f2t">Speech waveform with screenshot markers at 0:04, 0:31 and 1:02, producing a message with images at those positions</title>
+        <text class="t-sm t-dim" x="10" y="24">recording</text>
+        <!-- waveform -->
+        <g id="waveform">
+          <rect class="wave" x="90" y="38" width="200" height="22" rx="6"/>
+          <rect class="wave" x="310" y="34" width="260" height="30" rx="6"/>
+          <rect class="wave" x="590" y="40" width="160" height="18" rx="6"/>
+          <rect class="wave" x="770" y="36" width="180" height="26" rx="6"/>
+        </g>
+        <line class="wire" x1="90" y1="86" x2="950" y2="86"/>
+        <g id="markers"><title>Screenshot moments</title>
+          <g><line class="wire-p wire-dash" x1="120" y1="26" x2="120" y2="86"/><circle class="fill-p" cx="120" cy="86" r="7"/><text class="t-sm" x="104" y="110">0:04</text></g>
+          <g><line class="wire-p wire-dash" x1="450" y1="26" x2="450" y2="86"/><circle class="fill-p" cx="450" cy="86" r="7"/><text class="t-sm" x="434" y="110">0:31</text></g>
+          <g><line class="wire-p wire-dash" x1="940" y1="26" x2="940" y2="86"/><circle class="fill-p" cx="940" cy="86" r="7"/><text class="t-sm" x="912" y="110">1:02</text></g>
+        </g>
+        <text class="t-sm t-dim" x="10" y="160">message</text>
+        <g id="message">
+          <rect class="box-p" x="90" y="140" width="92" height="34" rx="8"/><text class="t-sm" x="102" y="162">[Image #1]</text>
+          <rect class="box" x="192" y="140" width="250" height="34" rx="8"/><text class="t-sm" x="204" y="162">"This login page — the button…"</text>
+          <rect class="box-p" x="452" y="140" width="92" height="34" rx="8"/><text class="t-sm" x="464" y="162">[Image #2]</text>
+          <rect class="box" x="554" y="140" width="290" height="34" rx="8"/><text class="t-sm" x="566" y="162">"…and after submit it shows this."</text>
+          <rect class="box-p" x="854" y="140" width="96" height="34" rx="8"/><text class="t-sm" x="866" y="162">[Image #3]</text>
+        </g>
+        <path class="wire-p wire-dash" d="M120 94 V 138"/><path class="wire-p wire-dash" d="M450 118 C 470 128, 490 128, 498 138"/><path class="wire-p wire-dash" d="M940 118 V 138"/>
+        <text class="t-sm t-dim" x="90" y="220">Claude Code already supports inline <tspan font-weight="700">[Image #N]</tspan> chips anywhere in a prompt (since 2.1.83), so the order survives delivery.</text>
+        <text class="t-sm t-dim" x="90" y="244">Screenshot detection: own hotkey, or watch the clipboard for a new image (what ⌘⌃⇧4 already does).</text>
+      </svg>
+    </figure>
+  </section>
+
+  <!-- 3. LANDSCAPE -->
+  <section id="landscape" data-lavish-revision="r3">
+    <div class="eyebrow">3 · What already exists (redone: stars checked, curated lists, HN)</div>
+    <h2>The parts are popular. Nobody has put them together.</h2>
+    <p class="lede">Second pass: GitHub sorted by stars with every count checked through the API, plus awesome-claude-code, awesome-mcp-servers, awesome-mac and Hacker News threads. Reddit blocks our network, so it isn't covered. Big projects own <b>one</b> part each. The few that combine two or three are new and small (2–80★).</p>
+
+    <h3 class="text-lg font-bold mt-6">Closest competitors (by fit, not stars)</h3>
+    <div class="flex flex-wrap gap-4 text-sm mt-2 opacity-80">
+      <span><span class="dot d-yes"></span> yes</span><span><span class="dot d-part"></span> partly</span><span><span class="dot d-no"></span> no</span>
+    </div>
+    <div class="overflow-x-auto mt-3 rounded-box bg-base-200">
+      <table class="table matrix">
+        <thead><tr><th>Tool</th><th>Traction</th><th>Voice</th><th>Screens</th><th>In order</th><th>Into a session you pick</th><th>No focus</th><th>Custom words</th></tr></thead>
+        <tbody>
+          <tr class="goal-row font-semibold"><td>Showtell (goal)</td><td>—</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://snippai.dev">SnippAI</a><div class="text-xs opacity-60">⌥⇧4 region → voice panel → into your running CC session. Closed, $8.99. iTerm2 / Terminal.app</div></td><td>HN, Jul 2026</td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td></tr>
+          <tr><td><a href="https://github.com/T0mSIlver/localvoxtral">localvoxtral</a><div class="text-xs opacity-60">streaming local dictation for CLI agents → herdr socket, cmux, CC mod, iTerm2. Vocab from repo file names + <code>.github/dictation.md</code></div></td><td>59★ · MIT</td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://deiko.app">Deiko</a><div class="text-xs opacity-60">double-tap ⌥, talk while pointing; every thing you point at is cropped and labeled in order → brief. You drag it in by hand</div></td><td>HN, Sep 2026 · OSS</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/hashfunction/MarkuprPlus">MarkuprPlus</a><div class="text-xs opacity-60">record a window and narrate; each mark becomes a PNG with timestamp-aligned narration → markdown report</div></td><td>79★ · MIT</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/xingbofeng/VoxFlow">VoxFlow</a><div class="text-xs opacity-60">voice keyboard + screenshot workbench; "speak an agent name and task → dispatch to registered sessions"</div></td><td>47★ · GPL-3</td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://github.com/APIANT/shellshot">ShellShot</a><div class="text-xs opacity-60">region + arrows + typed question → iTerm2 Python API with a picker over live CC sessions</div></td><td>1★ · HN</td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/ethanplusai/jarvis">jarvis</a><div class="text-xs opacity-60">voice assistant that watches CC sessions and steers them through each session's inbox socket</div></td><td>847★</td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://superwhisper.com/claude-code">Superwhisper for Claude Code</a><div class="text-xs opacity-60">floating window that sends your voice to the agent "when it needs more information"</div></td><td>paid incumbent</td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-no"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td></tr>
+          <tr><td><a href="https://support.claude.com/en/articles/12626668-use-quick-entry-with-claude-desktop-on-mac">Claude Quick Entry</a> / <a href="https://code.claude.com/docs/en/remote-control">Remote Control</a><div class="text-xs opacity-60">the UX to copy (Quick Entry → Desktop chats only) / sends images into a live terminal session, but from a browser</div></td><td>Anthropic</td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-no"></span></td></tr>
+          <tr><td><a href="https://github.com/FinalAngel/claude-annotate">claude-annotate</a> · <a href="https://github.com/jonathan-oralart/show-and-tell">show-and-tell</a><div class="text-xs opacity-60">ordered note batch over channels (localhost pages) · pins and notes → clipboard (name close to ours!)</div></td><td>1★ · 0★</td><td><span class="dot d-no"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-yes"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-part"></span></td><td><span class="dot d-no"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="text-lg font-bold mt-8">The popular building blocks (one part each)</h3>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Voice</div>
+        <p class="text-sm"><a href="https://github.com/cjpais/Handy">Handy</a> <b>33k★</b> MIT: the tool HN recommends most for agents · <a href="https://github.com/altic-dev/FluidVoice">FluidVoice</a> <b>12k★</b> (custom dictionary) · <a href="https://github.com/OpenWhispr/openwhispr">OpenWhispr</a> 9.2k★ · <a href="https://github.com/Beingpax/VoiceInk">VoiceInk</a> 6.7k★ · <a href="https://github.com/TypeWhisper/typewhisper-mac">TypeWhisper</a> 1.8k★ (term packs) · <a href="https://github.com/Starmel/OpenSuperWhisper">OpenSuperWhisper</a> 3k★. <span class="opacity-70">All of them paste where the cursor is, with focus needed and no target choice.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Talking with agents</div>
+        <p class="text-sm"><a href="https://github.com/mbailey/voicemode">voicemode</a> 1.4k★ (the agent starts the conversation) · <a href="https://github.com/spaceamoeba-t/tapq">tapq</a> 590★ (AirPods, only at stop/permission hooks) · <a href="https://github.com/jarrodwatts/claude-stt">claude-stt</a> 364★ (types into the focused window) · <a href="https://github.com/slopus/happy">Happy</a> 24k★ (its own sessions). <span class="opacity-70">Back-and-forth conversation, not show and tell.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Visual feedback</div>
+        <p class="text-sm"><a href="https://github.com/aidenybai/react-grab">react-grab</a> 7.7k★ · <a href="https://github.com/benjitaylor/agentation">agentation</a> 4.9k★ · <a href="https://github.com/rixinhahaha/snip">Snip</a> 341★ · <a href="https://github.com/openclaw/Peekaboo">Peekaboo</a> 5.3k★ (the agent pulls screenshots). <span class="opacity-70">Web pages only, or the agent pulls; no voice.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Your terminal: herdr</div>
+        <p class="text-sm"><a href="https://github.com/herdrdev/herdr">herdr</a> <b>43k★</b> · add-ons: <a href="https://github.com/AltanS/collie">collie</a> 1.3k★ (phone → herdr panes, with voice) · <a href="https://github.com/penso/herdr-gpui">herdr-gpui</a> 1.1k★ ("Send to agent") · <a href="https://github.com/persiyanov/herdr-reviewr">herdr-reviewr</a> 860★. <span class="opacity-70">Showtell can be another herdr add-on.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Screen-aware assistants</div>
+        <p class="text-sm"><a href="https://github.com/screenpipe/screenpipe">screenpipe</a> 22k★ · <a href="https://github.com/Sylinko/Everywhere">Everywhere</a> 6.3k★ · <a href="https://github.com/sohzm/cheating-daddy">cheating-daddy</a> 5.6k★ · Highlight, Cluely. <span class="opacity-70">Each answers in its own chat and can't reach a Claude Code session.</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-4"><div class="eyebrow">Agent terminals</div>
+        <p class="text-sm"><a href="https://github.com/warpdotdev/warp">Warp</a> 65k★ (voice + images, but only for its own agent) · <a href="https://github.com/manaflow-ai/cmux">cmux</a> 28k★ · <a href="https://github.com/superset-sh/superset">superset</a> 15k★ · <a href="https://github.com/amantus-ai/vibetunnel">vibetunnel</a> 4.7k★. <span class="opacity-70">None of them has capture with narration.</span></p></div></div>
+    </div>
+
+    <h3 class="text-lg font-bold mt-8">What people complain about (HN threads)</h3>
+    <div class="grid sm:grid-cols-2 gap-3 mt-3">
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>"Five steps, dozens of times a day."</b> Screenshot → save → alt-tab → drag → type → enter. Every tool above was built because of this.</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>"This one" is ambiguous.</b> Words can't say which of nine buttons you mean. People fix it by pointing while talking (Deiko), drawing arrows (ShellShot) or attaching selectors (react-grab).</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Jargon gets mis-heard.</b> Custom dictionaries are the most requested feature. Tricks: vocabulary from repo files (localvoxtral), or a screenshot of the window so the LLM gets spellings right (FreeFlow).</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Native <code>/voice</code> is weak.</b> About 500 ms of lag drops the first words, it only works while the terminal is focused, and there are no custom words. People prefer a dictation tool that works system-wide.</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Only iTerm2 is supported.</b> Every tool that types into a terminal does iTerm2 (sometimes Terminal.app) and nothing else. <b>None supports herdr</b> except localvoxtral (text only).</div></div>
+      <div class="card bg-base-200"><div class="card-body p-4 text-sm"><b>Local over cloud.</b> Strong preference for on-device models (Parakeet, Whisper). Tools that send telemetry get called out.</div></div>
+    </div>
+
+    <div class="card bg-base-200 mt-5"><div class="card-body p-5"><div class="eyebrow">Ideas to borrow</div>
+      <ul class="list-disc pl-5 text-sm space-y-1">
+        <li><b>localvoxtral:</b> word list from repo file names + a <code>.github/dictation.md</code> per repo; send to a session by speaking its name ("send that to payments").</li>
+        <li><b>MarkuprPlus / Deiko:</b> one screenshot + its piece of narration as the basic unit. Deiko crops to what you were pointing at.</li>
+        <li><b>ShellShot:</b> a session picker over every live Claude Code session, plus arrows drawn on the screenshot.</li>
+        <li><b>Quick Entry / Codex Appshots:</b> the overlay design. Appshots also captures the window's off-screen text along with the image.</li>
+      </ul>
+      <p class="text-sm mt-3"><b>What's still open:</b> several screenshots kept <b>in order</b> with live narration, delivered to a session <b>you pick</b> in <b>herdr and iTerm2</b> without focusing it, with <b>custom words</b>. Nobody has all of that. The biggest risk is Anthropic letting Quick Entry target Claude Code sessions.</p>
+    </div></div>
+  </section>
+
+  <!-- 4. VOICE + VOCAB -->
+  <section id="vocab">
+    <div class="eyebrow">4 · Voice and your known words</div>
+    <h2>Fixing mis-heard words takes several layers</h2>
+    <p class="lede">The tools that handle jargon well combine several of these layers. OpenSuperWhisper already has the first one (an <code>initialPrompt</code> setting, used by Whisper only).</p>
+    <figure>
+      <svg viewBox="0 0 960 200" width="100%" role="img" aria-labelledby="f3t">
+        <title id="f3t">Four vocabulary layers from cheapest to most powerful</title>
+        <g id="v1"><title>Layer 1: prompt bias (Whisper initial prompt, last ~224 tokens)</title>
+          <rect class="box" x="10" y="30" width="220" height="120" rx="14"/>
+          <circle class="fill-p" cx="38" cy="58" r="14"/><text class="t-md t-pc" x="33" y="63">1</text>
+          <text class="t-md" x="62" y="63">Prompt bias</text>
+          <text class="t-sm t-dim" x="30" y="95">Whisper initial prompt</text>
+          <text class="t-sm t-dim" x="30" y="115">≈224 tokens of terms</text>
+          <text class="t-sm" x="30" y="137">✓ already in OSW</text>
+        </g>
+        <path class="wire" d="M230 90 H 250"/>
+        <g id="v2"><title>Layer 2: keyword boosting for Parakeet (FluidAudio CTC, ~50-230 terms)</title>
+          <rect class="box" x="250" y="30" width="220" height="120" rx="14"/>
+          <circle class="fill-p" cx="278" cy="58" r="14"/><text class="t-md t-pc" x="273" y="63">2</text>
+          <text class="t-md" x="302" y="63">Keyword boost</text>
+          <text class="t-sm t-dim" x="270" y="95">Parakeet · FluidAudio CTC</text>
+          <text class="t-sm t-dim" x="270" y="115">best ≤ 50 terms</text>
+          <text class="t-sm" x="270" y="137">OSW issue #19 (open)</text>
+        </g>
+        <path class="wire" d="M470 90 H 490"/>
+        <g id="v3"><title>Layer 3: replacement dictionary (wrong → right)</title>
+          <rect class="box-p" x="490" y="30" width="220" height="120" rx="14"/>
+          <circle class="fill-p" cx="518" cy="58" r="14"/><text class="t-md t-pc" x="513" y="63">3</text>
+          <text class="t-md" x="542" y="63">Replace list</text>
+          <text class="t-sm t-dim" x="510" y="95">"lay vish" → Lavish</text>
+          <text class="t-sm t-dim" x="510" y="115">deterministic, instant</text>
+          <text class="t-sm" x="510" y="137">add from the history UI</text>
+        </g>
+        <path class="wire" d="M710 90 H 730"/>
+        <g id="v4"><title>Layer 4: optional LLM cleanup pass with repo terms</title>
+          <rect class="box" x="730" y="30" width="220" height="120" rx="14"/>
+          <circle class="fill-p" cx="758" cy="58" r="14"/><text class="t-md t-pc" x="753" y="63">4</text>
+          <text class="t-md" x="782" y="63">LLM cleanup</text>
+          <text class="t-sm t-dim" x="750" y="95">fed with target repo's</text>
+          <text class="t-sm t-dim" x="750" y="115">file &amp; symbol names</text>
+          <text class="t-sm" x="750" y="137">optional · costs latency</text>
+        </g>
+        <text class="t-sm t-dim" x="10" y="185">Idea: since Showtell knows the target session's folder, it can build the word list from that repo automatically (like /voice uses project + branch).</text>
+      </svg>
+    </figure>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Engine (local, free)</th><th>Speed on Apple Silicon</th><th>Custom words</th><th>Word timestamps</th></tr></thead>
+        <tbody>
+          <tr><td><b>Parakeet v2/v3</b> (FluidAudio)</td><td>very fast</td><td>CTC keyword boost</td><td>yes (tokens)</td></tr>
+          <tr><td><b>whisper.cpp large-v3-turbo</b></td><td>fast</td><td>initial prompt</td><td>yes</td></tr>
+          <tr><td><b>Apple SpeechAnalyzer</b> (macOS 26)</td><td>fast, built in</td><td><code>DictationTranscriber</code> custom LM</td><td>yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5. DELIVERY -->
+  <section id="delivery">
+    <div class="eyebrow">5 · Getting it into Claude Code</div>
+    <h2>Four ways in. Only one gives real inline images today.</h2>
+    <p class="lede">Checked against the docs and the CLI on this machine (Claude Code 2.1.296). You already have <b>iTerm2</b>, <b>tmux</b> and <b>herdr</b> installed, and herdr can map a pane to its Claude <code>sessionId</code>.</p>
+    <figure>
+      <svg viewBox="0 0 960 250" width="100%" role="img" aria-labelledby="f4t">
+        <title id="f4t">Delivery paths from Showtell into a running Claude Code session</title>
+        <g id="app"><title>Showtell app with a finished message</title>
+          <rect class="box-p" x="10" y="85" width="160" height="80" rx="14"/>
+          <text class="t-md" x="34" y="120">Showtell</text>
+          <text class="t-sm t-dim" x="34" y="142">text + images</text>
+        </g>
+        <g id="p1"><title>A: pane paste via tmux / herdr / iTerm2 — real [Image #N] chips</title>
+          <path class="wire-p" d="M170 125 C 230 125, 230 35, 290 35"/>
+          <rect class="box-a" x="290" y="12" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="41">A  Pane paste (tmux · herdr · iTerm2)</text>
+          <text class="t-sm" x="706" y="41">✓ inline images</text>
+        </g>
+        <g id="p2"><title>B: per-session inbox socket — text only, screenshots as file paths</title>
+          <path class="wire" d="M170 125 C 230 125, 230 95, 290 95"/>
+          <rect class="box" x="290" y="72" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="101">B  Session inbox socket</text>
+          <text class="t-sm t-dim" x="706" y="101">paths · Claude reads them</text>
+        </g>
+        <g id="p3"><title>C: Channel MCP server — needs special launch flag</title>
+          <path class="wire" d="M170 125 C 230 125, 230 155, 290 155"/>
+          <rect class="box" x="290" y="132" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="161">C  Channel (MCP push)</text>
+          <text class="t-sm t-dim" x="706" y="161">paths · dev flag at launch</text>
+        </g>
+        <g id="p4"><title>D: MCP inbox tool returning image blocks — Claude must call it</title>
+          <path class="wire" d="M170 125 C 230 125, 230 215, 290 215"/>
+          <rect class="box" x="290" y="192" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="221">D  MCP inbox_next() tool</text>
+          <text class="t-sm t-dim" x="706" y="221">images · needs a nudge</text>
+        </g>
+      </svg>
+    </figure>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Path</th><th>Any running session?</th><th>Images</th><th>Catch</th></tr></thead>
+        <tbody>
+          <tr class="goal-row"><td><b>A · Pane paste</b><div class="text-xs opacity-60"><code>tmux paste-buffer -p</code>, <code>herdr agent prompt</code>, iTerm2 <code>write text</code></div></td><td>Yes, if it runs in tmux, herdr or iTerm2</td><td>Each path pasted on its own → <code>[Image #N]</code> chip (verified, see 5b)</td><td>A half-typed draft or open dialog in that pane can garble input. Wait for the session to be idle first.</td></tr>
+          <tr><td><b>B · Inbox socket</b><div class="text-xs opacity-60">every session has one (<code>~/.claude/sessions/&lt;pid&gt;.json</code>)</div></td><td>Yes, any terminal</td><td>Text only; Claude opens the screenshot files</td><td>Message format undocumented. In bypass mode (how you run) each message needs an approval click.</td></tr>
+          <tr><td><b>C · Channel</b><div class="text-xs opacity-60">research preview</div></td><td>Only sessions launched with it</td><td>Paths in metadata</td><td>Needs <code>--dangerously-load-development-channels</code>. The cleanest documented contract.</td></tr>
+          <tr><td><b>D · MCP inbox tool</b></td><td>Sessions with the server configured</td><td>Yes, real image blocks, in order</td><td>Claude only gets it when it calls the tool, so pair with B, C or a Stop hook.</td></tr>
+          <tr class="opacity-60"><td>✗ <code>claude -p --resume</code> / SDK</td><td>No</td><td>Yes</td><td>Separate process; the open terminal never sees it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5b. DELIVERY TEST RESULTS -->
+  <section id="results" data-lavish-revision="r1">
+    <div class="eyebrow">5b · Delivery test results (10 Oct, scratch sessions)</div>
+    <h2>A works in all your terminals; D works anywhere; C is blocked</h2>
+    <p class="lede">Each test used solid-color PNGs (red, green, blue) in a throwaway Claude Code session (2.1.296). I asked "colors in order, no tools", so a correct answer proves Claude saw the attached images and not just file paths.</p>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Test</th><th>Images sent</th><th>Prompt box showed</th><th>Claude answered</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Paths <b>inside the text</b>, one paste</td><td>red, green, blue</td><td>plain path text</td><td>"can't tell without opening the files"</td><td><span class="badge badge-error badge-soft">✗ not attached</span></td></tr>
+          <tr class="goal-row"><td><b>tmux</b>: text, then each path pasted on its own</td><td>red, green, blue</td><td><code>First: [Image #1] … [Image #2] … [Image #3]</code></td><td>"Red, green, blue."</td><td><span class="badge badge-success">✓ in order</span></td></tr>
+          <tr><td><b>herdr</b> <code>pane send-text</code> (typed, no paste markers)</td><td>red, green</td><td>plain path text</td><td>n/a</td><td><span class="badge badge-error badge-soft">✗</span></td></tr>
+          <tr class="goal-row"><td><b>herdr</b> <code>pane send-text</code> with <code>ESC[200~ path ESC[201~</code></td><td>red, green</td><td><code>[Image #1] … [Image #2]</code></td><td>"red, green"</td><td><span class="badge badge-success">✓ in order</span></td></tr>
+          <tr class="goal-row"><td><b>iTerm2</b> plain tab, AppleScript <code>write text</code> with paste markers</td><td>green, blue</td><td><code>[Image #1] … [Image #2]</code></td><td>"Green, Blue"</td><td><span class="badge badge-success">✓ in order</span></td></tr>
+          <tr><td>Everything in <b>one burst</b> (no pauses)</td><td>blue, red</td><td><code>A:  B:  …text…[Image #3] [Image #4]</code></td><td>n/a</td><td><span class="badge badge-warning badge-soft">◐ images jump to the end</span></td></tr>
+          <tr><td><b>Inbox socket</b>, text</td><td>—</td><td>"Held message" approval dialog</td><td>"PONG" after approving</td><td><span class="badge badge-warning badge-soft">◐ needs approval</span></td></tr>
+          <tr><td><b>Inbox socket</b>, image block</td><td>blue</td><td>nothing</td><td>dropped without any message</td><td><span class="badge badge-error badge-soft">✗ text only</span></td></tr>
+                  <tr data-lavish-revision="r2"><td><b>C · Channel</b> push (dev flag)</td><td>text</td><td>"blocked by org policy … inbound messages will be silently dropped"</td><td>nothing</td><td><span class="badge badge-error badge-soft">✗ blocked by Team org policy</span></td></tr>
+          <tr class="goal-row" data-lavish-revision="r2"><td><b>D · MCP <code>inbox_next</code></b>, nudged by a pasted one-liner</td><td>blue, red, green</td><td>"Called showtell"</td><td>"1. Blue 2. Red 3. Green"</td><td><span class="badge badge-success">✓ real image blocks, in order</span></td></tr>
+          <tr data-lavish-revision="r2"><td><b>D</b>, nudged through the <b>inbox socket</b></td><td>green</td><td>"Held message" → approved</td><td>"Green"</td><td><span class="badge badge-warning badge-soft">◐ works, needs approval click</span></td></tr>
+          <tr data-lavish-revision="r2"><td>Socket with <code>crossSessionInbound: accept</code> in <b>project</b> settings</td><td>red</td><td>still "Held peer message"</td><td>n/a</td><td><span class="badge badge-warning badge-soft">◐ project setting ignored; user-level untested</span></td></tr>
+</tbody>
+      </table>
+    </div>
+    <div class="grid md:grid-cols-3 gap-3 mt-5">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Rule 1</div><p>Each screenshot path has to arrive as its <b>own bracketed paste</b>. Inside a sentence it stays plain text.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Rule 2</div><p><b>Pause after each image</b> until its <code>[Image #N]</code> chip appears (about 0.8 s worked), otherwise the images jump to the end. All three terminals let us read the screen back to check.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Finding sessions</div><p><code>~/.claude/sessions/&lt;pid&gt;.json</code> gives cwd, name and idle/busy status, plus the tmux pane id. The pid's tty matches an iTerm2 session's <code>tty</code>, and <code>herdr agent list</code> maps panes to sessionIds.</p></div></div>
+    </div>
+    <div class="card bg-base-200 mt-5" data-lavish-revision="r2"><div class="card-body p-5">
+      <div class="eyebrow">Decision after testing all four paths</div>
+      <p><b>Primary: A, pasting into the pane</b> (herdr and iTerm2 adapters). The message shows up in your prompt box like something you typed, with real <code>[Image #N]</code>s, and you can even look it over before it's sent. The cost is pausing about 0.8 s per image.</p>
+      <p class="mt-2"><b>Robust option: D, an inbox tool with a pasted nudge.</b> Showtell queues the message in its MCP server and pastes one short line ("call inbox_next"). There's no image timing to manage and the images arrive as real image blocks. It needs a one-time MCP setup in <code>~/.claude.json</code>, and the message shows up as a tool result rather than as your own prompt.</p>
+      <p class="mt-2 opacity-75"><b>Out for now:</b> C (channels are off for your Team org unless an admin enables <code>channelsEnabled</code>). B only as a text nudge, and only if you set <code>crossSessionInbound: "accept"</code> in your user settings (untested).</p>
+    </div></div>
+  </section>
+
+  <!-- 6. LAVISH PATTERN -->
+  <section id="lavish">
+    <div class="eyebrow">6 · The Lavish pattern you mentioned</div>
+    <h2>Queue the message, let the agent pick it up</h2>
+    <p class="lede"><code>lavish-axi</code> doesn't push into Claude. The browser adds feedback to a <b>queue that survives restarts</b>, and the agent collects it with <code>lavish-axi poll</code>. Showtell could do the same thing as a fallback: an "outbox" per session that is never lost, even when the terminal is busy.</p>
+    <figure>
+      <svg viewBox="0 0 960 150" width="100%" role="img" aria-labelledby="f5t">
+        <title id="f5t">Producer writes to a durable queue; agent long-polls and receives batches</title>
+        <rect class="box" x="10" y="40" width="220" height="70" rx="14"/><text class="t-md" x="34" y="72">Browser / Showtell</text><text class="t-sm t-dim" x="34" y="94">queue prompt</text>
+        <path class="wire-p" d="M230 75 H 360"/><text class="t-sm t-dim" x="250" y="66">write</text>
+        <g><title>Durable queue: survives until delivered</title>
+          <rect class="box-p" x="360" y="40" width="240" height="70" rx="14"/>
+          <rect class="fill-p" x="384" y="62" width="34" height="26" rx="5" opacity=".9"/><rect class="fill-p" x="426" y="62" width="34" height="26" rx="5" opacity=".6"/><rect class="fill-p" x="468" y="62" width="34" height="26" rx="5" opacity=".35"/>
+          <text class="t-sm" x="514" y="80">queue</text>
+        </g>
+        <path class="wire" d="M600 75 H 730"/><text class="t-sm t-dim" x="620" y="66">long-poll</text>
+        <rect class="box" x="730" y="40" width="220" height="70" rx="14"/><text class="t-md" x="754" y="72">Claude Code</text><text class="t-sm t-dim" x="754" y="94">pulls when ready</text>
+      </svg>
+      <figcaption>Strength: nothing gets dropped or garbled. Weakness: an idle session has to be woken up, which pane paste (A) or the inbox socket (B) can do.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 7. NEXT STEP -->
+  <section id="next" data-lavish-revision="r4">
+    <div class="eyebrow">7 · Recommendation and next step (revised after the redo)</div>
+    <h2>Yes, it changes the plan: build on localvoxtral, not OpenSuperWhisper</h2>
+    <p class="lede">The redo found a project that already does about two-thirds of what we meant to build. <a href="https://github.com/T0mSIlver/localvoxtral">localvoxtral</a> is Swift, MIT, pushed 2 days ago and built "for prompting coding agents by voice". It already has the parts we planned to write ourselves.</p>
+
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Part we planned</th><th>OpenSuperWhisper (old base)</th><th>localvoxtral (new base)</th></tr></thead>
+        <tbody>
+          <tr><td>Local voice</td><td>✓ Whisper / Parakeet, transcribed after you stop</td><td>✓ <b>Streaming</b> Voxtral 4B: words appear while you talk</td></tr>
+          <tr><td>Custom words</td><td>◐ Whisper prompt only</td><td>✓ <code>RepoVocabulary</code> (from repo files + <code>.github/dictation.md</code>), <code>replacement_dictionary.toml</code>, optional LLM polish</td></tr>
+          <tr><td>Pick the target session</td><td>✗ pastes wherever the cursor is</td><td>✓ joins a Claude Code session in iTerm2, Ghostty, <b>herdr</b> or cmux; "agent needs you" alerts</td></tr>
+          <tr><td>Review before sending</td><td>✗</td><td>✓ overlay you can edit, plus an Inbox</td></tr>
+          <tr><td>Screenshots in order</td><td>✗</td><td>✗ <b>this is what we'd add</b></td></tr>
+          <tr><td>Image delivery (rules tested in 5b)</td><td>✗</td><td>✗ <b>we'd add this too</b>: paste each path on its own, wait for the chip</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-3 mt-5">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Why streaming matters</div>
+        <p class="text-sm">With live transcription, a screenshot just goes <b>where the text has reached at that moment</b>. Section 2's timestamp alignment isn't needed. Hotkey → <code>[Image #n]</code> chip in the overlay → keep talking.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Costs of this route</div>
+        <p class="text-sm">It's a large codebase (~1,600 files). The 4B model is heavier than Parakeet. A fork means keeping up with an active upstream, so the better path is <b>small PRs upstream</b> (the repo has <code>CLAUDE.md</code>/<code>AGENTS.md</code> and invites contributions).</p></div></div>
+    </div>
+
+    <h3 class="text-lg font-bold mt-8">Revised steps</h3>
+    <ol class="steps steps-vertical lg:steps-horizontal w-full mt-4">
+      <li class="step step-primary"><div class="text-left lg:text-center"><b>Delivery test ✓</b><br><span class="text-sm opacity-70">Done (5b). The rules apply on any route.</span></div></li>
+      <li class="step step-primary"><div class="text-left lg:text-center"><b>Try before building</b><br><span class="text-sm opacity-70">~30 min: install localvoxtral (<code>brew install --cask T0mSIlver/localvoxtral/localvoxtral</code>) with your herdr + iTerm2. Optionally SnippAI ($8.99). Does the voice half feel right?</span><span class="block mt-2 text-sm text-left" data-lavish-revision="r5"><b>Setup:</b> localvoxtral sees only the sessions its Claude Code plugin reports. Open <b>Settings → Claude Code → Plugin → Install or update</b>, then restart each running session (<code>/exit</code>, then <code>claude -c</code>). For iTerm2, allow the Automation prompt. The waiting list appears only with <b>Tell me when an agent needs you</b> turned on.</span><span class="block mt-2 text-sm text-left" data-lavish-revision="r6"><b>Then:</b> in <b>Settings → Context</b>, turn on <b>Send repo file names</b> or <b>Send agent's terminal screen</b>. With both off, localvoxtral doesn't even try to join a session (its log: <code>gate: both context settings off</code>). Check with <code>/Applications/localvoxtral.app/Contents/MacOS/localvoxtral-cli doctor</code>.</span></div></li>
+      <li class="step"><div class="text-left lg:text-center"><b>Read its code</b><br><span class="text-sm opacity-70">Map the overlay, the herdr/iTerm2 delivery and the Claude Code mod (hooks). Find where an image chip would go.</span></div></li>
+      <li class="step"><div class="text-left lg:text-center"><b>Add "show"</b><br><span class="text-sm opacity-70">Screenshot hotkey during dictation → chip in the overlay → paste each image on commit. Open an issue upstream first.</span></div></li>
+    </ol>
+
+    <div class="grid md:grid-cols-2 gap-4 mt-8">
+      <form class="card bg-base-200" data-lavish-question="route" onsubmit="event.preventDefault(); const c=new FormData(event.currentTarget).get('route'); if(c) window.lavish?.queuePrompt('Route: '+c, {tag:'choice', text:'Route: '+c, element:event.currentTarget, data:{question:'route', answer:c}});">
+        <div class="card-body p-5 gap-2">
+          <div class="eyebrow">Your call</div>
+          <p class="font-semibold">Which way do we build?</p>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="route" value="Extend localvoxtral (upstream PRs, fork if needed)" checked> <span><b>Extend localvoxtral</b> <span class="badge badge-primary badge-sm">recommended</span><br><span class="text-sm opacity-70">Least new code. Add screenshots + image delivery, aim to upstream.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="route" value="Own small app on FluidAudio (Parakeet) + our delivery"> <span><b>Own small app</b><br><span class="text-sm opacity-70">FluidAudio (3k★, Parakeet, keyword boost) + ScreenCaptureKit + our tested delivery. Full control, more work, rebuilds what localvoxtral already has.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="route" value="Fork OpenSuperWhisper (original plan)"> <span><b>Fork OpenSuperWhisper</b> (original plan)<br><span class="text-sm opacity-70">Now the weakest option: no session targeting, and it transcribes only after you stop talking.</span></span></label>
+          <div class="card-actions justify-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Queue answer</button></div>
+        </div>
+      </form>
+      <form class="card bg-base-200" data-lavish-question="next2" onsubmit="event.preventDefault(); const c=new FormData(event.currentTarget).get('next2'); if(c) window.lavish?.queuePrompt('Next: '+c, {tag:'choice', text:'Next: '+c, element:event.currentTarget, data:{question:'next2', answer:c}});">
+        <div class="card-body p-5 gap-2">
+          <div class="eyebrow">Right now</div>
+          <p class="font-semibold">What should I do next?</p>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="next2" value="I'll try localvoxtral myself first" checked> <span><b>You try localvoxtral first</b><br><span class="text-sm opacity-70">I wait for your impressions.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="next2" value="Map localvoxtral's code for where screenshots would go"> <span><b>I map localvoxtral's code</b><br><span class="text-sm opacity-70">Overlay, delivery and Claude Code mod → a short plan for adding screenshots.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="next2" value="Both in parallel"> <span><b>Both at once</b></span></label>
+          <div class="card-actions justify-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Queue answer</button></div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <footer class="pt-8 text-sm opacity-60">
+    Sources: Claude Code docs (<a href="https://code.claude.com/docs/en/channels">channels</a>, <a href="https://code.claude.com/docs/en/cross-session-messaging">cross-session messaging</a>, <a href="https://code.claude.com/docs/en/hooks">hooks</a>, <a href="https://code.claude.com/docs/en/voice-dictation">voice</a>), <a href="https://github.com/Starmel/OpenSuperWhisper">OpenSuperWhisper</a>, <a href="https://docs.fluidinference.com/asr/custom-vocabulary">FluidAudio custom vocabulary</a>, and the project links in the table. Things marked "to verify" have not been tested against a live session.
+  </footer>
+</main>
+</body>
+</html>

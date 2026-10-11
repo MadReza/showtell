@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showtell · What we pick</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+  <header class="pt-12 pb-6">
+    <div class="eyebrow">Page 5 of 5 · Proposal, not built yet</div>
+    <h1 class="text-4xl font-extrabold tracking-tight mt-2">What we pick</h1>
+    <p class="text-lg mt-3 lede">A native <b>Swift menu-bar app</b> (macOS 14+) with <b>FluidAudio</b> for speech, <b>ScreenCaptureKit</b> for screenshots and a small <b>herdr socket client</b> for delivery. Everything runs on your Mac; every borrowed piece has a permissive licence.</p>
+  </header>
+
+  <section id="shape" class="!border-t-0 !pt-0">
+    <div class="eyebrow">The app's shape</div>
+    <h2>Seven small parts, one direction of flow</h2>
+    <figure>
+      <svg viewBox="0 0 960 330" width="100%" role="img" aria-labelledby="st">
+        <title id="st">Showtell architecture: hotkeys and overlay, recorder, speech, capture and vocabulary feed a composer, which feeds an outbox and the herdr client</title>
+        <g><title>Hotkeys + overlay: non-activating NSPanel, Carbon hotkeys</title>
+          <rect class="box" x="10" y="20" width="200" height="70" rx="12"/><text class="t-md" x="26" y="50">Hotkeys + overlay</text><text class="t-sm t-dim" x="26" y="72">NSPanel · Carbon</text></g>
+        <g><title>Recorder: AVAudioEngine 16 kHz</title>
+          <rect class="box" x="10" y="110" width="200" height="70" rx="12"/><text class="t-md" x="26" y="140">Recorder</text><text class="t-sm t-dim" x="26" y="162">AVAudioEngine · VAD</text></g>
+        <g><title>Capture: ScreenCaptureKit region or window, Showtell excluded</title>
+          <rect class="box" x="10" y="200" width="200" height="70" rx="12"/><text class="t-md" x="26" y="230">Capture</text><text class="t-sm t-dim" x="26" y="252">ScreenCaptureKit</text></g>
+        <path class="wire" d="M210 145 H 250"/>
+        <g><title>Speech: FluidAudio streaming Parakeet + custom-word boost; word timings</title>
+          <rect class="box-p" x="250" y="110" width="210" height="70" rx="12"/><text class="t-md" x="266" y="140">Speech</text><text class="t-sm t-dim" x="266" y="162">FluidAudio · Parakeet</text></g>
+        <g><title>Vocabulary: pinned repo's dictation.md + file names + your list + replace table</title>
+          <rect class="box" x="250" y="20" width="210" height="70" rx="12"/><text class="t-md" x="266" y="50">Vocabulary</text><text class="t-sm t-dim" x="266" y="72">from the pinned repo</text></g>
+        <path class="wire wire-dash" d="M355 90 V 110"/>
+        <path class="wire" d="M460 145 H 500"/>
+        <path class="wire" d="M210 235 C 420 235, 440 170, 500 160"/>
+        <g><title>Composer: words with timings plus screenshot markers become an ordered list of text and image pieces</title>
+          <rect class="box-p" x="500" y="105" width="190" height="80" rx="12"/><text class="t-md" x="516" y="136">Composer</text><text class="t-sm t-dim" x="516" y="158">text · image · text</text><text class="t-sm t-dim" x="516" y="176">by word timing</text></g>
+        <path class="wire" d="M110 90 V 100 H 595 V 105" />
+        <path class="wire-p" d="M690 145 H 720"/>
+        <g><title>Outbox: one ordered queue per pinned session; holds while blocked</title>
+          <rect class="box-p" x="720" y="105" width="110" height="80" rx="12"/><text class="t-md" x="734" y="136">Outbox</text><text class="t-sm t-dim" x="734" y="158">ordered</text><text class="t-sm t-dim" x="734" y="176">durable</text></g>
+        <path class="wire-p" d="M830 145 H 850"/>
+        <g><title>herdr client: agent.list, events.subscribe, pane.send_input, pane.send_keys</title>
+          <rect class="box-a" x="850" y="85" width="100" height="120" rx="12"/><text class="t-md" x="862" y="118">herdr</text><text class="t-sm t-dim" x="862" y="140">socket</text><text class="t-sm t-dim" x="862" y="160">client</text></g>
+        <path class="wire wire-dash" d="M900 205 V 260 H 640"/>
+        <text class="t-sm t-dim" x="420" y="266">status events (idle · working · blocked)</text>
+        <text class="t-sm t-dim" x="10" y="310">Pinned session = {Claude session id, herdr terminal id, pane id}. Checked before every write.</text>
+      </svg>
+    </figure>
+  </section>
+
+  <section id="picks">
+    <div class="eyebrow">Each part, one pick</div>
+    <h2>The stack</h2>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Part</th><th>Pick</th><th>Why</th><th>Fallback</th></tr></thead>
+        <tbody>
+          <tr><td class="whitespace-nowrap"><b>App</b></td><td>Swift + SwiftUI, menu bar, macOS 14+</td><td>Native permissions (mic, screen), ScreenCaptureKit and FluidAudio are Swift; small and fast.</td><td>—</td></tr>
+          <tr class="goal-row"><td class="whitespace-nowrap"><b>Speech</b></td><td>FluidAudio <code>StreamingUnifiedAsrManager</code> (Parakeet 0.6B, English)</td><td>Only local live engine with custom-word boosting built in; word timestamps; Apache-2.0; runs on the Neural Engine.</td><td>Batch Parakeet v3 per pause (still boosted)</td></tr>
+          <tr><td class="whitespace-nowrap"><b>Custom words</b></td><td>FluidAudio boost (≤≈230 terms, aliases) + replace table</td><td>Fix in the model first, then a deterministic text pass. Terms load from the pinned repo's <code>.github/dictation.md</code> + file names.</td><td>Handy-style fuzzy match</td></tr>
+          <tr><td class="whitespace-nowrap"><b>Screenshots</b></td><td>ScreenCaptureKit, region drag or front window</td><td>Modern API, can exclude Showtell's own overlay; numbered files keep order.</td><td><code>screencapture -i</code></td></tr>
+          <tr><td class="whitespace-nowrap"><b>Placement</b></td><td>Word timings from the recogniser</td><td>A screenshot goes after the word you were saying when you took it; the overlay shows the chip live.</td><td>Current end of text</td></tr>
+          <tr class="goal-row"><td class="whitespace-nowrap"><b>Delivery</b></td><td>herdr socket <code>pane.send_input</code> + <code>send_keys</code></td><td>Tested: chips in order, queues while busy, no focus change.</td><td>MCP inbox tool (tested)</td></tr>
+          <tr><td class="whitespace-nowrap"><b>Sessions</b></td><td>herdr <code>agent.list</code> + <code>events.subscribe</code></td><td>Session id, folder, title and status for every Claude pane, with no Claude plugin needed.</td><td>—</td></tr>
+          <tr><td class="whitespace-nowrap"><b>Overlay</b></td><td>Non-activating <code>NSPanel</code></td><td>Never steals focus; what every good dictation app does.</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm mt-3 opacity-75">Not picked: Voxtral 4B (localvoxtral's engine, ≈3.5 GB and heavier); Apple SpeechAnalyzer (macOS 26 only, and Apple says its live transcriber ignores custom word lists); whisper.cpp (not live).</p>
+  </section>
+
+  <section id="rust">
+    <div class="eyebrow">Your question</div>
+    <h2>Rust works. Swift is still the better fit here.</h2>
+    <p class="lede">Handy (33k★) shows a Rust app can do dictation well on a Mac. The cost is in the two parts that matter most to Showtell.</p>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Part</th><th>Swift</th><th>Rust</th></tr></thead>
+        <tbody>
+          <tr><td class="whitespace-nowrap"><b>Speech</b></td><td>FluidAudio: streaming Parakeet on the Neural Engine, with custom-word boost built in</td><td>ONNX engines (transcribe-rs, sherpa-onnx), mostly CPU. sherpa-onnx has hotword biasing for some models <span class="tag-i">to check</span>. No FluidAudio.</td></tr>
+          <tr><td class="whitespace-nowrap"><b>Screenshots</b></td><td>ScreenCaptureKit, first-class</td><td>Community bindings (objc2 crates, screencapturekit-rs) <span class="tag-i">maturity unchecked</span></td></tr>
+          <tr><td class="whitespace-nowrap"><b>Overlay, hotkeys</b></td><td>NSPanel, Carbon: native</td><td>Through Objective-C bindings or Tauri (Handy uses tauri-nspanel) <span class="tag-v">read</span></td></tr>
+          <tr><td class="whitespace-nowrap"><b>Permissions</b></td><td>mic, screen recording, Accessibility prompts work as Apple documents</td><td>same prompts, but debugging them goes through bindings</td></tr>
+          <tr><td class="whitespace-nowrap"><b>herdr client</b></td><td>easy (a socket + JSON)</td><td>easy, and herdr itself is Rust</td></tr>
+          <tr><td class="whitespace-nowrap"><b>Windows/Linux later</b></td><td>✗</td><td>✓ the real reason to pick Rust</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm mt-3"><b>Middle path:</b> keep the speech engine a separate local process behind a small streaming protocol, as localvoxtral does. The app can be Swift now, and the engine or app can be swapped later without touching the other.</p>
+  </section>
+
+  <section id="risks">
+    <div class="eyebrow">What could bite</div>
+    <h2>Open questions to settle in the first spike</h2>
+    <div class="grid md:grid-cols-2 gap-3 mt-4">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Latency</div><p class="text-sm">The boosted live engine lags about <b>2 s</b>. If that feels slow, show a faster 160 ms model as a grey preview and replace it with the boosted text. <span class="tag-i">untested pairing</span></p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Downloads</div><p class="text-sm">About 600 MB for the speech model plus ≈100 MB for the word booster, downloaded on first run.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">herdr changes</div><p class="text-sm"><code>pane.send_input</code> is a socket method with no CLI command (herdr 0.9.3, protocol 22). Pin the protocol version and check it at start-up.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">When to press Enter</div><p class="text-sm">Auto-send when you stop, review first in the overlay, or say "send it". This changes the feel of the app, so it's your call (below).</p></div></div>
+    </div>
+  </section>
+
+  <section id="next">
+    <div class="eyebrow">First milestone</div>
+    <h2>Build the risky end first: the pin and the paste</h2>
+    <ol class="steps steps-vertical lg:steps-horizontal w-full mt-4">
+      <li class="step step-primary"><div class="text-left lg:text-center"><b>Pin + paste</b><br><span class="text-sm opacity-70">Menu-bar picker over herdr's Claude panes; send typed text + a clipboard image to the pinned pane.</span></div></li>
+      <li class="step"><div class="text-left lg:text-center"><b>Show</b><br><span class="text-sm opacity-70">Screenshot hotkey adds numbered images to the outbox in order.</span></div></li>
+      <li class="step"><div class="text-left lg:text-center"><b>Tell</b><br><span class="text-sm opacity-70">FluidAudio live speech in the overlay, screenshots placed by word timing.</span></div></li>
+      <li class="step"><div class="text-left lg:text-center"><b>Your words</b><br><span class="text-sm opacity-70">Boost terms from the pinned repo; replace table.</span></div></li>
+    </ol>
+
+    <div class="grid md:grid-cols-2 gap-4 mt-8">
+      <form class="card bg-base-200" data-lavish-question="stack" onsubmit="event.preventDefault(); const c=new FormData(event.currentTarget).get('stack'); if(c) window.lavish?.queuePrompt('Stack: '+c, {tag:'choice', text:'Stack: '+c, element:event.currentTarget, data:{question:'stack', answer:c}});">
+        <div class="card-body p-5 gap-2">
+          <div class="eyebrow">Your call</div>
+          <p class="font-semibold">Go with this stack and milestone?</p>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="stack" value="Yes: start with Pin + paste" checked> <span><b>Yes, start with "Pin + paste"</b> <span class="badge badge-primary badge-sm">recommended</span><br><span class="text-sm opacity-70">I scaffold the Swift app on this branch.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="stack" value="Yes, but start with speech (Tell) first"> <span><b>Yes, but speech first</b><br><span class="text-sm opacity-70">Try FluidAudio's latency before anything else.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="stack" value="Change something (I'll comment)"> <span><b>Change something</b><br><span class="text-sm opacity-70">Annotate the part you'd change.</span></span></label>
+          <div class="card-actions justify-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Queue answer</button></div>
+        </div>
+      </form>
+      <form class="card bg-base-200" data-lavish-question="send" onsubmit="event.preventDefault(); const c=new FormData(event.currentTarget).get('send'); if(c) window.lavish?.queuePrompt('Sending: '+c, {tag:'choice', text:'Sending: '+c, element:event.currentTarget, data:{question:'send', answer:c}});">
+        <div class="card-body p-5 gap-2">
+          <div class="eyebrow">Feel</div>
+          <p class="font-semibold">When should a message be sent?</p>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="send" value="Paste into the prompt, I press Enter myself" checked> <span><b>Paste only</b><br><span class="text-sm opacity-70">Lands in the prompt; you send it. Safest to start.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="send" value="Auto-send when I stop talking"> <span><b>Auto-send on stop</b><br><span class="text-sm opacity-70">Fastest; no chance to fix a mis-heard word.</span></span></label>
+          <label class="flex gap-2 items-start"><input type="radio" class="radio radio-sm radio-primary mt-1" name="send" value="Review in the overlay, then a key or 'send it'"> <span><b>Review, then send</b><br><span class="text-sm opacity-70">Edit in the overlay; a key or "send it" sends.</span></span></label>
+          <div class="card-actions justify-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Queue answer</button></div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <div id="pager"></div>
+</main>
+<script src="nav.js"></script>
+</body>
+</html>
