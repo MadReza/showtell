@@ -66,9 +66,11 @@ Requires macOS 14+, Swift 6 (Command Line Tools are enough), and herdr.
 ```sh
 swift test                      # core tests
 scripts/make-signing-cert.sh    # once: a local signing identity so permissions survive rebuilds
-scripts/bundle.sh               # builds build/Showtell.app (release)
-open build/Showtell.app
+scripts/install.sh              # builds and installs /Applications/Showtell.app, then opens it
 ```
+
+`scripts/bundle.sh` only builds `build/Showtell.app`. Turn on **Open at login** in Settings once
+the app is in /Applications. `swift scripts/make-icon.swift` redraws `Resources/AppIcon.icns`.
 
 The first launch downloads the speech models (about 700 MB).
 
