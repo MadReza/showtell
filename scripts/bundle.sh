@@ -39,5 +39,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc signature with a stable identifier, so permission grants survive rebuilds as far as macOS allows.
-codesign --force --deep --sign - --identifier dev.showtell.Showtell "$app"
+# A stable identity keeps macOS permissions (Accessibility, Microphone) across rebuilds; ad-hoc
+# signatures change with every build. Create one with scripts/make-signing-cert.sh.
+identity=$(security find-identity -p codesigning 2>/dev/null | awk -F'"' '/"Showtell Local Signing"/ {print $2; exit}')
+codesign --force --deep --sign "${identity:--}" --identifier dev.showtell.Showtell "$app"
 echo "built $app"
