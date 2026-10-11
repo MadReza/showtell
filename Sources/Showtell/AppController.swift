@@ -77,6 +77,18 @@ final class AppController: NSObject, NSMenuDelegate {
         center.addObserver(forName: .init("dev.showtell.settings"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.openSettings() }
         }
+        center.addObserver(forName: .init("dev.showtell.target"), object: nil, queue: .main) { [weak self] note in
+            let target = note.object as? String
+            MainActor.assumeIsolated {
+                if target == "cursor" {
+                    self?.pickCursor()
+                } else if let target {
+                    let mi = NSMenuItem()
+                    mi.representedObject = target
+                    self?.pick(mi)
+                }
+            }
+        }
 
         Task { await speech.load() }
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted {
