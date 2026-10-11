@@ -60,6 +60,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
         registerMainHotKey()
         model.onUserEdit = { [weak self] text in self?.userEdited(text) }
+        model.onShowSessions = { [weak self] in self?.showSessionsInBar() }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
         screenshotKeys.onEscape = { [weak self] in self?.panel.reappear() }
@@ -362,6 +363,15 @@ final class AppController: NSObject, NSMenuDelegate {
         statusItem.button?.imagePosition = .imageLeading
     }
 
+    /// The session list as a drop-down under the mouse, from the name in the bar.
+    private func showSessionsInBar() {
+        let menu = NSMenu()
+        addSessionItems(to: menu)
+        guard let view = panel.contentView else { return }
+        let point = view.convert(panel.mouseLocationOutsideOfEventStream, from: nil)
+        menu.popUp(positioning: nil, at: point, in: view)
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let action = state == .recording ? "Send" : "Start talking"
@@ -369,23 +379,7 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(header("Open a session"))
 
-        do {
-            let agents = try herdr.listAgentsNow().filter(\.isClaude)
-            if agents.isEmpty { menu.addItem(disabled("No Claude sessions in herdr")) }
-            for agent in agents {
-                let mi = item("\(agent.folderName) — \(agent.displayName)", #selector(pick(_:)))
-                mi.representedObject = agent.paneID
-                let pinned = settings.pinned.map { $0.locate(in: [agent]) != nil } ?? false
-                mi.state = pinned ? .on : .off
-                mi.toolTip = "\(agent.paneID) · \(agent.status.rawValue) · \(agent.foregroundCwd ?? agent.cwd ?? "")"
-                menu.addItem(mi)
-            }
-            if let p = settings.pinned, p.locate(in: agents) == nil {
-                menu.addItem(disabled("\(p.name) (not running)"))
-            }
-        } catch {
-            menu.addItem(disabled("herdr isn't running"))
-        }
+        addSessionItems(to: menu)
 
         menu.addItem(.separator())
         let submit = item("Second press sends (Enter)", #selector(toggleSubmit))
@@ -405,6 +399,26 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(disabled(speechStatus))
         menu.addItem(item("Quit Showtell", #selector(quit)))
+    }
+
+    private func addSessionItems(to menu: NSMenu) {
+        do {
+            let agents = try herdr.listAgentsNow().filter(\.isClaude)
+            if agents.isEmpty { menu.addItem(disabled("No Claude sessions in herdr")) }
+            for agent in agents {
+                let mi = item("\(agent.folderName) — \(agent.displayName)", #selector(pick(_:)))
+                mi.representedObject = agent.paneID
+                let pinned = settings.pinned.map { $0.locate(in: [agent]) != nil } ?? false
+                mi.state = pinned ? .on : .off
+                mi.toolTip = "\(agent.paneID) · \(agent.status.rawValue) · \(agent.foregroundCwd ?? agent.cwd ?? "")"
+                menu.addItem(mi)
+            }
+            if let p = settings.pinned, p.locate(in: agents) == nil {
+                menu.addItem(disabled("\(p.name) (not running)"))
+            }
+        } catch {
+            menu.addItem(disabled("herdr isn't running"))
+        }
     }
 
     private var speechStatus: String {
