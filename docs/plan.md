@@ -1,6 +1,6 @@
 # Showtell plan
 
-Updated 10 Oct 2026. Spec: [spec.md](spec.md).
+Updated 11 Oct 2026. Spec: [spec.md](spec.md).
 
 ## Decisions so far
 
@@ -12,6 +12,10 @@ Updated 10 Oct 2026. Spec: [spec.md](spec.md).
 | 10 Oct | Screenshots via the native clipboard shortcuts; bar hides while capturing | User's request; avoids the Screen Recording permission |
 | 10 Oct | Second hotkey press sends with Enter; edits allowed in between | User's request; controls to become customizable |
 | 10 Oct | Accept first-run model download; note the 2 s lag for later | User's call |
+| 11 Oct | Start/send on a lone-modifier tap (left ⌥), recordable in a Settings window | User's request; easier to test and use |
+| 11 Oct | Stricter word boost, no seeded aliases | Live tests: aliases turned "how well" into Showtell |
+| 11 Oct | Insert at the cursor as a destination | User's request |
+| 11 Oct | Sign with a local self-signed identity | Ad-hoc signatures lost permissions on every rebuild |
 
 ## Milestones
 
@@ -24,8 +28,7 @@ Updated 10 Oct 2026. Spec: [spec.md](spec.md).
 
 ## Next
 
-1. **First real run by you** (needs your clicks once): microphone permission, Accessibility
-   permission, then a real dictation with screenshots into a herdr session.
+1. ✓ **First real run** (11 Oct): four read-aloud tests, fixes in the [build report](reports/build-verification.md).
 2. **Latency:** try a fast preview (Parakeet EOU 160 ms) under the boosted transcript if 2 s feels slow.
 3. **Controls:** ✓ Settings window with shortcut recording (11 Oct). Still open: push-to-talk (hold) as an alternative to toggle.
 4. **More terminals:** iTerm2 plain tabs (AppleScript `write text` with paste markers), tmux
