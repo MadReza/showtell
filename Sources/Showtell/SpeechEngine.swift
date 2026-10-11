@@ -9,7 +9,7 @@ actor SpeechEngine {
     enum State: Equatable, Sendable { case notLoaded, loading(String), ready, failed(String) }
 
     /// Transcript so far, end times of newly timed words, and the audio time the transcript covers.
-    typealias Update = @Sendable (_ text: String, _ wordEnds: [Double], _ time: Double) -> Void
+    typealias Update = @Sendable (_ text: String, _ wordStarts: [Double], _ time: Double) -> Void
 
     struct NoMicrophone: LocalizedError {
         var errorDescription: String? { "no microphone input is available" }
@@ -51,6 +51,7 @@ actor SpeechEngine {
     func start(terms: [VocabularyTerm], onUpdate: @escaping Update) async throws {
         await stopAudio()
         try await asr.reset()
+        sawFirstToken = false
         await configureBoost(terms)
 
         let engine = AVAudioEngine()  // fresh each time: picks up the current input device
@@ -91,7 +92,7 @@ actor SpeechEngine {
                 last = Date()
                 try? await asr.processBufferedAudio()
                 let text = await asr.getPartialTranscript()
-                let ends = await asr.consumeWordTimings().map(\.endTime)
+                let ends = await newWordStarts()
                 if !Task.isCancelled { onUpdate(text, ends, clock.processed) }
             }
         }
@@ -99,21 +100,23 @@ actor SpeechEngine {
 
     /// Stops listening and returns the final transcript (the tail is rescored),
     /// the last word timings and the audio time it covers.
-    func stop() async -> (text: String, wordEnds: [Double], time: Double) {
+    func stop() async -> (text: String, wordStarts: [Double], time: Double) {
         await stopAudio(drain: true)
         var text = await asr.getPartialTranscript()
         if let final = try? await asr.finish() { text = final }
-        return (text, await asr.consumeWordTimings().map(\.endTime), clock.processed)
+        return (text, await newWordStarts(), clock.processed)
     }
 
     func cancel() async {
         await stopAudio()
         try? await asr.reset()
+        sawFirstToken = false
     }
 
     /// Self-test: streams an audio file through the same recogniser, in quarter-second chunks.
     func transcribeFile(_ url: URL, terms: [VocabularyTerm], onUpdate: Update) async throws -> String {
         try await asr.reset()
+        sawFirstToken = false
         await configureBoost(terms)
         let file = try AVAudioFile(forReading: url)
         let format = file.processingFormat
@@ -124,11 +127,24 @@ actor SpeechEngine {
             try await asr.appendAudio(buffer)
             try await asr.processBufferedAudio()
             let seconds = Double(file.framePosition) / format.sampleRate
-            onUpdate(await asr.getPartialTranscript(), await asr.consumeWordTimings().map(\.endTime), seconds)
+            onUpdate(await asr.getPartialTranscript(), await newWordStarts(), seconds)
         }
         let text = try await asr.finish()
-        onUpdate(text, await asr.consumeWordTimings().map(\.endTime), Double(file.length) / format.sampleRate)
+        onUpdate(text, await newWordStarts(), Double(file.length) / format.sampleRate)
         return text
+    }
+
+    /// Start times of the words begun since the last call. FluidAudio's own word grouping restarts
+    /// with every batch, so a word split across two batches would count twice; a word starts only
+    /// at a token carrying the `▁` boundary (or the very first token).
+    private var sawFirstToken = false
+    private func newWordStarts() async -> [Double] {
+        var starts: [Double] = []
+        for t in await asr.consumeTokenTimings() where !t.token.isEmpty && t.token != "<blank>" && t.token != "<pad>" {
+            if !sawFirstToken || t.token.hasPrefix("▁") || t.token.hasPrefix(" ") { starts.append(t.startTime) }
+            sawFirstToken = true
+        }
+        return starts
     }
 
     /// Stops the microphone. With `drain`, waits until every captured buffer reached the recogniser.
@@ -147,13 +163,17 @@ actor SpeechEngine {
 
     private func configureBoost(_ terms: [VocabularyTerm]) async {
         guard let ctcModels, let tokenizer, !terms.isEmpty else { return }
+        // Stricter than FluidAudio's defaults (0.52 / 0.54, acoustic rescue on), which turned
+        // "how well" into Showtell and "header" into herdr in testing. Aliases bypass these checks.
         let tokenized = terms.compactMap { t -> CustomVocabularyTerm? in
             let ids = tokenizer.encode(t.text)
             return ids.isEmpty ? nil : CustomVocabularyTerm(text: t.text, aliases: t.aliases, ctcTokenIds: ids)
         }
         guard !tokenized.isEmpty else { return }
         try? await asr.configureVocabularyBoosting(
-            vocabulary: CustomVocabularyContext(terms: tokenized), ctcModels: ctcModels)
+            vocabulary: CustomVocabularyContext(terms: tokenized, minSimilarity: 0.7, minCombinedConfidence: 0.7),
+            ctcModels: ctcModels,
+            config: VocabularyRescorer.Config(spotterRescueEnabled: false))
     }
 
     private func setState(_ s: State) {

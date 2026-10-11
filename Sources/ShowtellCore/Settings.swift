@@ -48,7 +48,7 @@ public struct Storage: Sendable {
         let fm = FileManager.default
         try fm.createDirectory(at: shotsURL, withIntermediateDirectories: true)
         if !fm.fileExists(atPath: vocabularyURL.path) {
-            try "# One term per line. Optional aliases: herdr: herder, her dr\nClaude Code\nherdr: herder\nShowtell: show tell\n"
+            try "# One term per line, written the way it should appear.\n# Aliases (herdr: herder) force the term onto similar-sounding words; use them sparingly.\nClaude Code\nherdr\nShowtell\n"
                 .write(to: vocabularyURL, atomically: true, encoding: .utf8)
         }
         if !fm.fileExists(atPath: replacementsURL.path) {
