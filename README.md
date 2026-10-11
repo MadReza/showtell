@@ -39,6 +39,7 @@ Requires macOS 14+, Swift 6 (Command Line Tools are enough), and herdr.
 
 ```sh
 swift test                  # core tests
+scripts/make-signing-cert.sh  # once: a local signing identity so permissions survive rebuilds
 scripts/bundle.sh           # builds build/Showtell.app (release)
 open build/Showtell.app
 ```
