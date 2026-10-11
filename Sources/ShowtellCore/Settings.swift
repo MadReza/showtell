@@ -7,7 +7,7 @@ public struct Settings: Codable, Equatable, Sendable {
     public var hotKeyModifiers: UInt32 = 0x1000 | 0x800  // ⌃⌥
     /// Second press sends with Enter. Off: the message is pasted and you press Enter yourself.
     public var submitOnSecondPress = true
-    /// Hide the bar while a native ⌘⇧3/4/5 screenshot is being taken.
+    /// Hide the bar while a native ⌘⌃⇧3/4 (copy to clipboard) screenshot is being taken.
     public var hideDuringScreenshots = true
     public var pinned: PinnedTarget?
 
