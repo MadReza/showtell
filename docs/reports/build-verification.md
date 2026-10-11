@@ -51,3 +51,17 @@ Four read-aloud tests through the real microphone, into this Claude session.
 
 Checked on synthesized recordings with the new settings: "how well", "header", herdr, Showtell and
 Claude Code all come out right.
+
+## Since v0.1, 11 Oct 2026
+
+| Change | Checked how | Result |
+|---|---|---|
+| Start/send on a tap of a lone modifier (left ⌥ by default) | your use | works once Accessibility is allowed |
+| Session drop-down in the bar | your use | switches the destination mid-recording |
+| Local signing identity (`scripts/make-signing-cert.sh`) | rebuilt several times after one grant | Accessibility kept across rebuilds |
+| Settings window with shortcut recording | your use; window rendered and captured | shortcuts recorded, including plain Esc for cancel; recorder gives up after 2 s |
+| Live permission status in Settings | stale entry from the ad-hoc build reproduced and cleared | status follows System Settings within a second |
+| Insert at the cursor | `showtell-cli target cursor`, then a spoken sentence (via `say`) with a clipboard image into TextEdit | text and image pasted in place; transcript exact. TextEdit's own "convert to RTFD" prompt for a plain `.rtf` stopped the last piece, a TextEdit quirk |
+
+Lesson from the cursor test: the paste goes to whichever app is in front. In one run TextEdit
+didn't come forward and the paste landed in iTerm2, so scripted tests now check the front app first.
