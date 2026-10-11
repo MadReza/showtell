@@ -13,6 +13,8 @@ usage:
       a piece is text, or @/absolute/path.png for a screenshot
   showtell-cli toggle | cancel | settings
       same as pressing the shortcut / the cancel shortcut / choosing Settings… in the running app
+  showtell-cli target cursor | <pane-id>
+      where the running app sends: insert at the cursor, or a herdr pane
 """
 
 func fail(_ message: String) -> Never {
@@ -63,6 +65,10 @@ case "send":
 case "toggle", "cancel", "settings":
     DistributedNotificationCenter.default().postNotificationName(
         .init("dev.showtell.\(args[0])"), object: nil, userInfo: nil, deliverImmediately: true)
+
+case "target" where args.count == 2:
+    DistributedNotificationCenter.default().postNotificationName(
+        .init("dev.showtell.target"), object: args[1], userInfo: nil, deliverImmediately: true)
 
 default:
     fail(usage)
