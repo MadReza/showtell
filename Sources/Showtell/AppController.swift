@@ -106,6 +106,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private var hotKeyLabel: String { settings.startShortcut.label }
     private var needsAccessibility: Bool {
         settings.startShortcut.tap != nil || settings.cancelShortcut.tap != nil || settings.hideDuringScreenshots
+            || settings.insertAtCursor
     }
 
     private func registerMainHotKey() {
@@ -118,7 +119,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private func apply(_ new: Settings) {
         let old = settings
         settings = new
-        settings.pinned = old.pinned  // the window doesn't edit the open session; keep the latest
+        settings.pinned = old.pinned  // the window doesn't edit the destination; keep the latest
+        settings.insertAtCursor = old.insertAtCursor
         storage.save(settings)
         if new.startShortcut != old.startShortcut { registerMainHotKey() }
         if new.cancelShortcut != old.cancelShortcut, state == .recording { bindCancel() }
@@ -154,7 +156,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Recording
 
     private func startRecording() {
-        guard let target = settings.pinned else {
+        guard settings.insertAtCursor || settings.pinned != nil else {
             flash(.error("Open a session first: click the menu-bar icon and pick a Claude session"))
             return
         }
@@ -164,7 +166,7 @@ final class AppController: NSObject, NSMenuDelegate {
         composer = Composer()
         recordingID = Self.stamp()
         recordingStart = Date()
-        model.targetName = target.name
+        model.targetName = targetLabel
         model.phase = .listening
         model.text = ""
         model.shots = []
@@ -182,7 +184,7 @@ final class AppController: NSObject, NSMenuDelegate {
         speechListening = false
         speechStart = nil
         if speechState == .ready {
-            let terms = storage.vocabulary(forRepoAt: target.cwd)
+            let terms = storage.vocabulary(forRepoAt: repoPath)
             let gen = generation
             let speech = speech!
             speechStart = Task { [weak self] in
@@ -201,7 +203,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 }
             }
         }
-        checkTargetStillThere(target)
+        if !settings.insertAtCursor, let target = settings.pinned { checkTargetStillThere(target) }
     }
 
     private func transcriptUpdated(_ text: String, _ ends: [Double], _ time: Double, generation gen: Int) {
@@ -256,7 +258,7 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func finishAndSend() async {
-        guard state == .recording, let target = settings.pinned else { return }
+        guard state == .recording else { return }
         state = .finishing
         stopCapture()
         let gen = generation
@@ -272,7 +274,7 @@ final class AppController: NSObject, NSMenuDelegate {
         speechStart = nil
         speechListening = false
         // Replacements, then each of your terms in the case you wrote it ("Herdr" → "herdr").
-        let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: target.cwd).map { ($0.text, $0.text) }
+        let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: repoPath).map { ($0.text, $0.text) }
         let pieces = composer.pieces().map { piece -> Piece in
             if case .text(let s) = piece { return .text(Vocabulary.applyReplacements(s, rules)) }
             return piece
@@ -283,6 +285,19 @@ final class AppController: NSObject, NSMenuDelegate {
         guard !pieces.isEmpty else { panel.dismiss(); return }
         saveLastMessage(rendered)
 
+        if settings.insertAtCursor {
+            panel.dismiss()  // hand the keyboard back to the app with the cursor
+            if await CursorInserter.insert(pieces) {
+                if state == .idle { flash(.sent, for: 1.0) }
+            } else {
+                flash(.info("Copied — press ⌘V to paste (allow Accessibility to paste for you)"), for: 5)
+            }
+            return
+        }
+        guard let target = settings.pinned else {
+            flash(.error("Open a session first: click the menu-bar icon and pick a Claude session"))
+            return
+        }
         model.phase = .sending
         pendingSends += 1
         await outbox.setEventHandler { [weak self] event in
@@ -357,7 +372,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Bar helpers
 
     private func refreshHint() {
-        let send = settings.submitOnSecondPress ? "send" : "paste"
+        let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel", "⌘⌃⇧4 adds a screenshot"]
         switch speechState {
         case .loading(let s): parts.insert(s, at: 0)
@@ -375,7 +390,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         model.hint = ""
         model.phase = phase
-        model.targetName = settings.pinned?.name ?? ""
+        model.targetName = targetLabel
         panel.present()
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -399,7 +414,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Menu
 
     private func updateStatusTitle() {
-        statusItem.button?.title = settings.pinned.map { " " + $0.name } ?? ""
+        statusItem.button?.title = targetLabel.isEmpty ? "" : " " + targetLabel
         statusItem.button?.imagePosition = .imageLeading
     }
 
@@ -442,6 +457,10 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func addSessionItems(to menu: NSMenu) {
+        let cursor = item("Insert at the cursor", #selector(pickCursor))
+        cursor.state = settings.insertAtCursor ? .on : .off
+        cursor.toolTip = "Paste into whatever app you are typing in, without pressing Enter"
+        menu.addItem(cursor)
         do {
             let agents = try herdr.listAgentsNow().filter(\.isClaude)
             if agents.isEmpty { menu.addItem(disabled("No Claude sessions in herdr")) }
@@ -449,7 +468,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 let mi = item("\(agent.folderName) — \(agent.displayName)", #selector(pick(_:)))
                 mi.representedObject = agent.paneID
                 let pinned = settings.pinned.map { $0.locate(in: [agent]) != nil } ?? false
-                mi.state = pinned ? .on : .off
+                mi.state = pinned && !settings.insertAtCursor ? .on : .off
                 mi.toolTip = "\(agent.paneID) · \(agent.status.rawValue) · \(agent.foregroundCwd ?? agent.cwd ?? "")"
                 menu.addItem(mi)
             }
@@ -493,6 +512,7 @@ final class AppController: NSObject, NSMenuDelegate {
         guard let pane = sender.representedObject as? String,
               let agent = try? herdr.listAgentsNow().first(where: { $0.paneID == pane }) else { return }
         settings.pinned = PinnedTarget(agent: agent)
+        settings.insertAtCursor = false
         storage.save(settings)
         updateStatusTitle()
         if state == .idle {
@@ -501,6 +521,22 @@ final class AppController: NSObject, NSMenuDelegate {
             model.targetName = agent.displayName  // this message goes to the new session
         }
     }
+
+    @objc private func pickCursor() {
+        settings.insertAtCursor = true
+        storage.save(settings)
+        updateStatusTitle()
+        if state == .idle {
+            flash(.info("Inserting at the cursor · \(hotKeyLabel) to start talking"), for: 2.5)
+        } else {
+            model.targetName = targetLabel
+        }
+    }
+
+    /// Where the message goes, as shown in the bar and the menu bar.
+    private var targetLabel: String { settings.insertAtCursor ? "Cursor" : settings.pinned?.name ?? "" }
+    /// The repo whose `.github/dictation.md` adds words: the open session's, unless inserting at the cursor.
+    private var repoPath: String? { settings.insertAtCursor ? nil : settings.pinned?.cwd }
 
     @objc private func toggleSubmit() {
         var s = settings

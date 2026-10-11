@@ -53,11 +53,13 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Hide the bar while a native ⌘⌃⇧3/4 (copy to clipboard) screenshot is being taken.
     public var hideDuringScreenshots = true
     public var pinned: PinnedTarget?
+    /// Insert into whatever app has the cursor instead of the open session.
+    public var insertAtCursor = false
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned
+        case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned, insertAtCursor
         case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
     }
 
@@ -76,6 +78,7 @@ public struct Settings: Codable, Equatable, Sendable {
         submitOnSecondPress = try c.decodeIfPresent(Bool.self, forKey: .submitOnSecondPress) ?? d.submitOnSecondPress
         hideDuringScreenshots = try c.decodeIfPresent(Bool.self, forKey: .hideDuringScreenshots) ?? d.hideDuringScreenshots
         pinned = try c.decodeIfPresent(PinnedTarget.self, forKey: .pinned)
+        insertAtCursor = try c.decodeIfPresent(Bool.self, forKey: .insertAtCursor) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -85,6 +88,7 @@ public struct Settings: Codable, Equatable, Sendable {
         try c.encode(submitOnSecondPress, forKey: .submitOnSecondPress)
         try c.encode(hideDuringScreenshots, forKey: .hideDuringScreenshots)
         try c.encodeIfPresent(pinned, forKey: .pinned)
+        try c.encode(insertAtCursor, forKey: .insertAtCursor)
     }
 }
 
