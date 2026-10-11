@@ -11,13 +11,15 @@ final class SettingsWindow {
     private var window: NSWindow?
     private var model: SettingsModel?
     private var poll: Timer?
+    private weak var cleaner: TextCleaner?
 
     init(storage: Storage) {
         self.storage = storage
     }
 
     func show(settings: ShowtellCore.Settings, onChange: @escaping (ShowtellCore.Settings) -> Void, onRecording: @escaping (Bool) -> Void,
-              onAskAccessibility: @escaping () -> Void) {
+              cleaner: TextCleaner, onAskAccessibility: @escaping () -> Void) {
+        self.cleaner = cleaner
         defer { watchPermissions() }
         if let window, let model {
             model.settings = settings
@@ -30,11 +32,11 @@ final class SettingsWindow {
         model.onChange = onChange
         model.onRecording = onRecording
         model.onAskAccessibility = onAskAccessibility
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Showtell Settings"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: SettingsView(model: model))
+        window.contentView = NSHostingView(rootView: SettingsView(model: model, cleaner: cleaner))
         window.center()
         self.window = window
         self.model = model
@@ -55,6 +57,7 @@ final class SettingsWindow {
                     return
                 }
                 self.model?.refresh()
+                self.cleaner?.objectWillChange.send()  // Apple Intelligence may have been switched on
             }
         }
     }
@@ -126,6 +129,7 @@ final class SettingsModel: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject var cleaner: TextCleaner
 
     var body: some View {
         Form {
@@ -146,6 +150,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            tidySection
             Section("Permissions") {
                 LabeledContent("Microphone") { Text(model.microphone).foregroundStyle(.secondary) }
                 LabeledContent("Accessibility") {
@@ -197,6 +202,117 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refresh()
         }
+    }
+}
+
+extension SettingsView {
+    var tidySection: some View {
+        Section {
+            ModelRow(title: "Off", summary: "Send exactly what the speech recogniser wrote.", pros: nil, cons: nil,
+                     selected: model.settings.cleanupModel == nil) {
+                model.settings.cleanupModel = nil
+            } trailing: { EmptyView() }
+            ForEach(CleanupModel.all) { option in
+                ModelRow(title: option.name, summary: option.summary, pros: option.pros, cons: option.cons,
+                         selected: model.settings.cleanupModel == option.id) {
+                    model.settings.cleanupModel = option.id
+                    // "It will be downloaded for you": picking a model fetches it.
+                    if cleaner.status(option) == .needsDownload { cleaner.download(option) }
+                } trailing: {
+                    ModelStatusView(option: option, cleaner: cleaner)
+                }
+            }
+            if let picked = CleanupModel.named(model.settings.cleanupModel) {
+                if case .unavailable(let reason) = cleaner.status(picked) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(reason).foregroundStyle(.orange)
+                        Button("Open Apple Intelligence settings") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")!)
+                        }
+                    }
+                    .font(.caption)
+                }
+                if let error = cleaner.downloadErrors[picked.id] {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                }
+                Toggle("Tidy every message when I send it", isOn: $model.settings.cleanupOnSend)
+                LabeledContent("Tidy up and review") { ShortcutField(model: model, path: \.cleanupShortcut) }
+                Text("While talking, press \(model.settings.cleanupShortcut.label): Showtell stops listening and shows the tidied text in the bar. Press it again to switch back to your own words, then \(model.settings.startShortcut.label) to send. With \"Tidy every message\" on, sending tidies first; if anything looks wrong you get the text back to check.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Tidy up text")
+        } footer: {
+            Text("Fixes punctuation, filler words (um, you know), numbers and misheard words, and keeps your own words. Runs on this Mac. If a screenshot marker or one of your words goes missing, your original text is kept.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// One choice in "Tidy up text": a radio button with what it's good and bad at.
+struct ModelRow<Trailing: View>: View {
+    let title: String
+    let summary: String
+    let pros: String?
+    let cons: String?
+    let selected: Bool
+    let pick: () -> Void
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                .foregroundStyle(selected ? Color.accentColor : .secondary)
+                .font(.system(size: 14))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).fontWeight(.medium)
+                Text(summary).font(.caption).foregroundStyle(.secondary)
+                if let pros { Label(pros, systemImage: "plus.circle").font(.caption).foregroundStyle(.green) }
+                if let cons { Label(cons, systemImage: "minus.circle").font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: pick)
+        .padding(.vertical, 2)
+    }
+}
+
+/// Ready, needs downloading (with its size), downloading (with progress), or why it can't be used.
+struct ModelStatusView: View {
+    let option: CleanupModel
+    @ObservedObject var cleaner: TextCleaner
+
+    var body: some View {
+        switch cleaner.status(option) {
+        case .ready:
+            HStack(spacing: 6) {
+                Label("Ready", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
+                    .font(.caption).foregroundStyle(.green)
+                if option.downloadBytes != nil {
+                    Button { cleaner.delete(option) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless).help("Delete the downloaded model")
+                }
+            }
+        case .needsDownload:
+            Button("Download \(Self.size(option.downloadBytes ?? 0))") { cleaner.download(option) }
+                .controlSize(.small)
+        case .downloading(let fraction):
+            HStack(spacing: 6) {
+                ProgressView(value: fraction).frame(width: 80)
+                Text("\(Int(fraction * 100))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Button { cleaner.cancelDownload(option) } label: { Image(systemName: "xmark.circle") }
+                    .buttonStyle(.borderless).help("Stop the download")
+            }
+        case .unavailable:
+            Label("Not on", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+        }
+    }
+
+    static func size(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
 
