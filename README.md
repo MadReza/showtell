@@ -1,0 +1,123 @@
+# Showtell
+
+Talk and take screenshots while you look at your app. Showtell puts your words and the
+screenshots, in the order you took them, into the Claude Code session you opened (in
+[herdr](https://github.com/herdrdev/herdr), tmux or a plain iTerm2 tab), or pastes them wherever
+your cursor is. The terminal
+never has to come forward.
+
+Everything runs on your Mac: speech is FluidAudio's streaming Parakeet model, with your own
+terms boosted.
+
+## Use it
+
+1. Click the menu-bar icon and pick where messages go:
+   - a Claude session under **Open a session**. It stays open until you pick another.
+   - or **Insert at the cursor**: the message is pasted into whatever app you are typing in,
+     screenshots included, without pressing Enter.
+2. Tap the **left ⌥** key on its own (change it in Settings). A bar appears at the top of the
+   screen and starts listening.
+3. Talk. Take screenshots with the normal **⌘⌃⇧4** (copy to clipboard). The bar steps out of
+   the way while you capture, and each screenshot appears in the text as `[📷 n]` at the word
+   you were saying.
+4. Click into the bar to fix words, or move and delete `[📷 n]` markers. Click the destination
+   name in the bar to send this message somewhere else.
+5. Tap **left ⌥** again. The message is pasted into the session (each screenshot becomes an
+   `[Image #n]` chip) and sent. If Claude is busy, Claude Code queues it. If Claude is showing a
+   dialog, Showtell waits.
+
+**⌃⌥⌫** cancels a recording.
+
+## Settings
+
+Menu → **Settings…** (⌘,):
+
+- **Shortcuts.** Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
+  single modifier tapped on its own (left ⌥, right ⌘). A plain Esc works for cancelling. Press
+  nothing for 2 seconds to keep the old one.
+- **Behaviour.** Whether the second press sends (presses Enter), and whether the bar hides on
+  ⌘⌃⇧3/4.
+- **Permissions.** Microphone and Accessibility status, with a button to allow.
+- **Your words.** One term per line, spelled the way it should appear. Aliases
+  (`herdr: herder`) force the term onto similar-sounding words, so use them sparingly. The open
+  session's repository can add terms in `.github/dictation.md` (inline code and the first words
+  of list items, the same file VS Code and localvoxtral read).
+- **Replacements.** `wrong => right` lines applied to the finished text.
+
+Files live in `~/Library/Application Support/Showtell/`: `settings.json`, `vocabulary.txt`,
+`replacements.txt`, `shots/`, `last-message.txt`, and `unsent-*.txt` for any message that could
+not be delivered.
+
+## Permissions
+
+- **Microphone:** asked on the first recording.
+- **Accessibility:** needed for single-modifier shortcuts, for hiding the bar on ⌘⌃⇧3/4, and for
+  pasting at the cursor. Without it, use a chord shortcut; the bar is still kept out of
+  screenshots.
+- No Screen Recording permission: screenshots come from the clipboard.
+
+If Accessibility is switched on but Settings says it isn't, the entry belongs to an older build:
+remove it with − in System Settings and allow again. Builds signed with the local identity (below)
+keep their permissions.
+
+## Build
+
+Requires macOS 14+, Swift 6 (Command Line Tools are enough), and herdr.
+
+```sh
+swift test                      # core tests
+scripts/make-signing-cert.sh    # once: a local signing identity so permissions survive rebuilds
+scripts/install.sh              # builds and installs /Applications/Showtell.app, then opens it
+```
+
+`scripts/bundle.sh` only builds `build/Showtell.app`. Turn on **Open at login** in Settings once
+the app is in /Applications. `swift scripts/make-icon.swift` redraws `Resources/AppIcon.icns`.
+
+The first launch downloads the speech models (about 700 MB).
+
+Debug tools:
+
+```sh
+swift run showtell-cli sessions                                   # Claude sessions in herdr
+swift run showtell-cli send <pane-id> --submit "look" @/tmp/a.png # deliver like the app does
+swift run showtell-cli toggle | cancel | settings                 # drive the running app
+swift run showtell-cli target cursor | <pane-id>                  # change where it sends
+.build/release/Showtell --transcribe speech.wav herdr Showtell    # speech self-test on a file
+```
+
+## How delivery works
+
+**herdr:** Showtell talks to herdr's socket (`~/.config/herdr/herdr.sock`). Each text part and each
+screenshot path is sent with `pane.send_input`, which herdr turns into a bracketed paste, so
+Claude Code attaches the image. It pauses about 0.8 s after each image, then presses Enter with
+`pane.send_keys`. Before every message it finds the session again by its Claude session id, so a
+pane that moved still gets it.
+
+**tmux and iTerm2:** sessions are found from `~/.claude/sessions/<pid>.json` (session id, cwd,
+name, status) and the process's terminal, matched against tmux's panes and iTerm2's sessions. tmux
+gets `paste-buffer -p` per piece and `send-keys Enter`; iTerm2 gets AppleScript `write text` with
+paste markers, then a carriage return. A session waiting on a dialog (status `waiting`) is not
+pasted into. macOS asks once for permission to control iTerm2. A session that is in herdr is
+always reached through herdr.
+
+**At the cursor:** each part goes through the clipboard and a synthesized ⌘V, in order; your
+clipboard is put back afterwards.
+
+## Known limits
+
+- The streaming recogniser with word boosting lags about 2 s behind your voice.
+- A boosted multi-word term can swallow the word before it ("in Claude Code" → "Claude Code").
+- Numbers come out as the model writes them ("four zero four" → "04").
+- Sessions in other terminals (Terminal.app, Ghostty, Warp…) aren't reachable yet: use insert at
+  the cursor there.
+
+## Docs
+
+- [Spec](docs/spec.md) and [plan](docs/plan.md)
+- Reports: [delivery tests](docs/reports/delivery-tests.md), [study of existing tools](docs/reports/study.md),
+  [build verification and live tests](docs/reports/build-verification.md)
+- Illustrated research: open [docs/research/index.html](docs/research/index.html) in a browser
+
+## License
+
+MIT. See [LICENSE](LICENSE).

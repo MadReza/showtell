@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showtell · Delivery</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+  <header class="pt-12 pb-6">
+    <div class="eyebrow">Page 4 of 5 · Tested against Claude Code 2.1.296 on this Mac</div>
+    <h1 class="text-4xl font-extrabold tracking-tight mt-2">Getting it into Claude Code</h1>
+    <p class="text-lg mt-3 lede">Short answer: <b>paste into the herdr pane through herdr's socket</b>, one piece at a time. Screenshot paths become real <code>[Image #N]</code> chips, and it works even while Claude is busy.</p>
+  </header>
+
+  <section id="answer" class="!border-t-0 !pt-0">
+    <figure class="!mt-0">
+      <svg viewBox="0 0 960 190" width="100%" role="img" aria-labelledby="dt">
+        <title id="dt">Delivery sequence: paste text, paste image path, wait for chip, paste text, then press Enter</title>
+        <text class="t-md" x="10" y="26">One message = a sequence of herdr socket calls</text>
+        <g>
+          <rect class="box" x="10" y="44" width="170" height="64" rx="10"/><text class="t-sm" x="24" y="70">send_input</text><text class="t-sm t-dim" x="24" y="90">"the header here "</text>
+          <path class="wire" d="M180 76 H 200"/>
+          <rect class="box-p" x="200" y="44" width="170" height="64" rx="10"/><text class="t-sm" x="214" y="70">send_input</text><text class="t-sm t-dim" x="214" y="90">/…/0001.png</text>
+          <path class="wire" d="M370 76 H 390"/>
+          <rect class="box-a" x="390" y="44" width="150" height="64" rx="10"/><text class="t-sm" x="404" y="70">wait ≈0.8 s</text><text class="t-sm t-dim" x="404" y="90">chip appears</text>
+          <path class="wire" d="M540 76 H 560"/>
+          <rect class="box" x="560" y="44" width="170" height="64" rx="10"/><text class="t-sm" x="574" y="70">send_input</text><text class="t-sm t-dim" x="574" y="90">" is cut off"</text>
+          <path class="wire" d="M730 76 H 750"/>
+          <rect class="box-p" x="750" y="44" width="200" height="64" rx="10"/><text class="t-sm" x="764" y="70">send_keys enter</text><text class="t-sm t-dim" x="764" y="90">≥0.3 s later</text>
+        </g>
+        <text class="t-sm t-dim" x="10" y="140">Prompt box: the header here [Image #1] is cut off</text>
+        <text class="t-sm t-dim" x="10" y="164">Never while herdr says <tspan font-weight="700">blocked</tspan> (a dialog is open): the paste would land in the dialog. Busy is fine: Claude queues it.</text>
+      </svg>
+    </figure>
+  </section>
+
+  <section id="results">
+    <div class="eyebrow">Test results</div>
+    <h2>A works in all your terminals; herdr's own paste is the cleanest</h2>
+    <p class="lede">Each test used solid-colour PNGs (red, green, blue) in a throwaway Claude Code session. A correct colour answer proves Claude saw the attached images, not just file paths.</p>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Test</th><th>Images sent</th><th>Prompt box showed</th><th>Claude answered</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Paths <b>inside the text</b>, one paste</td><td>red, green, blue</td><td>plain path text</td><td>"can't tell without opening the files"</td><td><span class="badge badge-error badge-soft">✗ not attached</span></td></tr>
+          <tr class="goal-row"><td><b>tmux</b>: text, then each path pasted on its own</td><td>red, green, blue</td><td><code>First: [Image #1] … [Image #2] … [Image #3]</code></td><td>"Red, green, blue."</td><td><span class="badge badge-success">✓ in order</span></td></tr>
+          <tr><td><b>herdr</b> <code>pane send-text</code> (typed, no paste markers)</td><td>red, green</td><td>plain path text</td><td>n/a</td><td><span class="badge badge-error badge-soft">✗</span></td></tr>
+          <tr class="goal-row"><td><b>herdr</b> <code>pane send-text</code> with <code>ESC[200~ path ESC[201~</code></td><td>red, green</td><td><code>[Image #1] … [Image #2]</code></td><td>"red, green"</td><td><span class="badge badge-success">✓ in order</span></td></tr>
+          <tr class="goal-row"><td><b>iTerm2</b> plain tab, AppleScript <code>write text</code> with paste markers</td><td>green, blue</td><td><code>[Image #1] … [Image #2]</code></td><td>"Green, Blue"</td><td><span class="badge badge-success">✓ in order</span></td></tr>
+          <tr><td>Everything in <b>one burst</b> (no pauses)</td><td>blue, red</td><td><code>A:  B:  …text…[Image #3] [Image #4]</code></td><td>n/a</td><td><span class="badge badge-warning badge-soft">◐ images jump to the end</span></td></tr>
+          <tr><td><b>Inbox socket</b>, text</td><td>—</td><td>"Held message" approval dialog</td><td>"PONG" after approving</td><td><span class="badge badge-warning badge-soft">◐ needs approval</span></td></tr>
+          <tr><td><b>Inbox socket</b>, image block</td><td>blue</td><td>nothing</td><td>dropped without any message</td><td><span class="badge badge-error badge-soft">✗ text only</span></td></tr>
+                  <tr data-lavish-revision="r2"><td><b>C · Channel</b> push (dev flag)</td><td>text</td><td>"blocked by org policy … inbound messages will be silently dropped"</td><td>nothing</td><td><span class="badge badge-error badge-soft">✗ blocked by Team org policy</span></td></tr>
+          <tr class="goal-row" data-lavish-revision="r2"><td><b>D · MCP <code>inbox_next</code></b>, nudged by a pasted one-liner</td><td>blue, red, green</td><td>"Called showtell"</td><td>"1. Blue 2. Red 3. Green"</td><td><span class="badge badge-success">✓ real image blocks, in order</span></td></tr>
+          <tr data-lavish-revision="r2"><td><b>D</b>, nudged through the <b>inbox socket</b></td><td>green</td><td>"Held message" → approved</td><td>"Green"</td><td><span class="badge badge-warning badge-soft">◐ works, needs approval click</span></td></tr>
+          <tr data-lavish-revision="r2"><td>Socket with <code>crossSessionInbound: accept</code> in <b>project</b> settings</td><td>red</td><td>still "Held peer message"</td><td>n/a</td><td><span class="badge badge-warning badge-soft">◐ project setting ignored; user-level untested</span></td></tr>
+          <tr class="goal-row"><td><b>herdr socket</b> <code>pane.send_input {text}</code> (native paste, no markers) <span class="badge badge-primary badge-xs">new</span></td><td>red, green</td><td><code>What colors are these? [Image #1] then [Image #2]</code></td><td>(see next row)</td><td><span class="badge badge-success">✓ chips, in order</span></td></tr>
+          <tr class="goal-row"><td>Same, while Claude was <b>busy</b> (running <code>sleep 20</code>), then Enter <span class="badge badge-primary badge-xs">new</span></td><td>blue</td><td>queued: <code>Also this one, what color: [Image #3]</code></td><td>"1. red 2. green 3. blue"</td><td><span class="badge badge-success">✓ queued with image</span></td></tr>
+</tbody>
+      </table>
+    </div>
+    <div class="grid md:grid-cols-3 gap-3 mt-5">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Rule 1</div><p>Each screenshot path has to arrive as its <b>own bracketed paste</b>. Inside a sentence it stays plain text.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Rule 2</div><p><b>Pause after each image</b> until its <code>[Image #N]</code> chip appears (about 0.8 s worked), otherwise the images jump to the end. All three terminals let us read the screen back to check.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Finding sessions</div><p><code>~/.claude/sessions/&lt;pid&gt;.json</code> gives cwd, name and idle/busy status, plus the tmux pane id. The pid's tty matches an iTerm2 session's <code>tty</code>, and <code>herdr agent list</code> maps panes to sessionIds.</p></div></div>
+    </div>
+  </section>
+
+  <section id="paths">
+    <div class="eyebrow">All the ways in</div>
+    <h2>Four ways in. Pane paste is the one that gives real inline images.</h2>
+    <figure>
+      <svg viewBox="0 0 960 250" width="100%" role="img" aria-labelledby="f4t">
+        <title id="f4t">Delivery paths from Showtell into a running Claude Code session</title>
+        <g id="app"><title>Showtell app with a finished message</title>
+          <rect class="box-p" x="10" y="85" width="160" height="80" rx="14"/>
+          <text class="t-md" x="34" y="120">Showtell</text>
+          <text class="t-sm t-dim" x="34" y="142">text + images</text>
+        </g>
+        <g id="p1"><title>A: pane paste via tmux / herdr / iTerm2 — real [Image #N] chips</title>
+          <path class="wire-p" d="M170 125 C 230 125, 230 35, 290 35"/>
+          <rect class="box-a" x="290" y="12" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="41">A  Pane paste (tmux · herdr · iTerm2)</text>
+          <text class="t-sm" x="706" y="41">✓ inline images</text>
+        </g>
+        <g id="p2"><title>B: per-session inbox socket — text only, screenshots as file paths</title>
+          <path class="wire" d="M170 125 C 230 125, 230 95, 290 95"/>
+          <rect class="box" x="290" y="72" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="101">B  Session inbox socket</text>
+          <text class="t-sm t-dim" x="706" y="101">paths · Claude reads them</text>
+        </g>
+        <g id="p3"><title>C: Channel MCP server — needs special launch flag</title>
+          <path class="wire" d="M170 125 C 230 125, 230 155, 290 155"/>
+          <rect class="box" x="290" y="132" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="161">C  Channel (MCP push)</text>
+          <text class="t-sm t-dim" x="706" y="161">paths · dev flag at launch</text>
+        </g>
+        <g id="p4"><title>D: MCP inbox tool returning image blocks — Claude must call it</title>
+          <path class="wire" d="M170 125 C 230 125, 230 215, 290 215"/>
+          <rect class="box" x="290" y="192" width="400" height="46" rx="10"/>
+          <text class="t-md" x="306" y="221">D  MCP inbox_next() tool</text>
+          <text class="t-sm t-dim" x="706" y="221">images · needs a nudge</text>
+        </g>
+      </svg>
+    </figure>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Path</th><th>Any running session?</th><th>Images</th><th>Catch</th></tr></thead>
+        <tbody>
+          <tr class="goal-row"><td><b>A · Pane paste</b><div class="text-xs opacity-60"><code>tmux paste-buffer -p</code>, <code>herdr agent prompt</code>, iTerm2 <code>write text</code></div></td><td>Yes, if it runs in tmux, herdr or iTerm2</td><td>Each path pasted on its own → <code>[Image #N]</code> chip (verified, see 5b)</td><td>A half-typed draft or open dialog in that pane can garble input. Wait for the session to be idle first.</td></tr>
+          <tr><td><b>B · Inbox socket</b><div class="text-xs opacity-60">every session has one (<code>~/.claude/sessions/&lt;pid&gt;.json</code>)</div></td><td>Yes, any terminal</td><td>Text only; Claude opens the screenshot files</td><td>Message format undocumented. In bypass mode (how you run) each message needs an approval click.</td></tr>
+          <tr><td><b>C · Channel</b><div class="text-xs opacity-60">research preview</div></td><td>Only sessions launched with it</td><td>Paths in metadata</td><td>Needs <code>--dangerously-load-development-channels</code>. The cleanest documented contract.</td></tr>
+          <tr><td><b>D · MCP inbox tool</b></td><td>Sessions with the server configured</td><td>Yes, real image blocks, in order</td><td>Claude only gets it when it calls the tool, so pair with B, C or a Stop hook.</td></tr>
+          <tr class="opacity-60"><td>✗ <code>claude -p --resume</code> / SDK</td><td>No</td><td>Yes</td><td>Separate process; the open terminal never sees it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card bg-base-200 mt-5"><div class="card-body p-5">
+      <div class="eyebrow">Decision</div>
+      <p><b>Primary: pane paste through herdr's socket</b> (<code>pane.send_input</code>). Your message shows up in the prompt like something you typed, with real chips, and queues if Claude is busy.</p>
+      <p class="mt-2"><b>Backup: D, an MCP inbox tool</b> that returns the images as image blocks, nudged by a one-line paste. Only if chips ever turn out unreliable.</p>
+      <p class="mt-2 opacity-75"><b>Out:</b> C (channels are off for your Team org); B (inbox socket) drops images and needs an approval click in bypass mode.</p>
+    </div></div>
+  </section>
+
+  <section id="lavish">
+    <div class="eyebrow">The Lavish pattern you mentioned</div>
+    <h2>Queue the message, deliver when the session can take it</h2>
+    <p class="lede"><code>lavish-axi</code> doesn't push into Claude. The browser adds feedback to a <b>queue that survives restarts</b>, and the agent collects it with <code>lavish-axi poll</code>. Showtell could do the same thing as a fallback: an "outbox" per session that is never lost, even when the terminal is busy.</p>
+    <figure>
+      <svg viewBox="0 0 960 150" width="100%" role="img" aria-labelledby="f5t">
+        <title id="f5t">Producer writes to a durable queue; agent long-polls and receives batches</title>
+        <rect class="box" x="10" y="40" width="220" height="70" rx="14"/><text class="t-md" x="34" y="72">Browser / Showtell</text><text class="t-sm t-dim" x="34" y="94">queue prompt</text>
+        <path class="wire-p" d="M230 75 H 360"/><text class="t-sm t-dim" x="250" y="66">write</text>
+        <g><title>Durable queue: survives until delivered</title>
+          <rect class="box-p" x="360" y="40" width="240" height="70" rx="14"/>
+          <rect class="fill-p" x="384" y="62" width="34" height="26" rx="5" opacity=".9"/><rect class="fill-p" x="426" y="62" width="34" height="26" rx="5" opacity=".6"/><rect class="fill-p" x="468" y="62" width="34" height="26" rx="5" opacity=".35"/>
+          <text class="t-sm" x="514" y="80">queue</text>
+        </g>
+        <path class="wire" d="M600 75 H 730"/><text class="t-sm t-dim" x="620" y="66">long-poll</text>
+        <rect class="box" x="730" y="40" width="220" height="70" rx="14"/><text class="t-md" x="754" y="72">Claude Code</text><text class="t-sm t-dim" x="754" y="94">pulls when ready</text>
+      </svg>
+      <figcaption>Strength: nothing gets dropped or garbled. Weakness: an idle session has to be woken up, which pane paste (A) or the inbox socket (B) can do.</figcaption>
+    </figure>
+  </section>
+
+  <div id="pager"></div>
+</main>
+<script src="nav.js"></script>
+</body>
+</html>

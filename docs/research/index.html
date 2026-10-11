@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showtell · Overview</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+  <header class="pt-12 pb-8">
+    <div class="eyebrow">Research · 10 Oct 2026 · page 1 of 5</div>
+    <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mt-2">Showtell</h1>
+    <p class="text-xl mt-3 lede">Open one Claude Code session, then keep talking and taking screenshots while you look at your app. Each message lands in that session, screenshots in the right place, and you never switch to the terminal.</p>
+    <div class="flex flex-wrap gap-2 mt-5">
+      <span class="badge badge-primary">Decision: our own small app</span>
+      <span class="badge badge-outline">Claude Code</span>
+      <span class="badge badge-outline">Local only</span>
+      <span class="badge badge-outline">herdr</span>
+      <span class="badge badge-ghost">Stage: study done → pick the tech</span>
+    </div>
+  </header>
+
+  <section id="interaction">
+    <div class="eyebrow">The interaction we want</div>
+    <h2>Pick a session once. Keep feeding it.</h2>
+    <p class="lede">localvoxtral routes your words to whatever pane is in front, or to the agent that is waiting for you. Showtell does the opposite: <b>you open a session and it stays open</b> while you move between the browser, the simulator and the docs. Every message goes there, in order, even while Claude is still working.</p>
+    <figure>
+      <svg viewBox="0 0 960 300" width="100%" role="img" aria-labelledby="ot1">
+        <title id="ot1">You pin one herdr Claude session; voice and screenshots from any app flow into an outbox and are pasted into that pane in order</title>
+        <!-- you, working elsewhere -->
+        <g id="apps"><title>You work in other apps: browser, simulator, Figma</title>
+          <rect class="box" x="10" y="30" width="230" height="240" rx="16"/>
+          <text class="t-md" x="30" y="60">You, in any app</text>
+          <rect class="box" x="30" y="78" width="190" height="44" rx="8"/><text class="t-sm" x="46" y="105">Browser · localhost:3000</text>
+          <rect class="box" x="30" y="132" width="190" height="44" rx="8"/><text class="t-sm" x="46" y="159">iOS Simulator</text>
+          <rect class="box" x="30" y="186" width="190" height="44" rx="8"/><text class="t-sm" x="46" y="213">Figma</text>
+          <text class="t-sm t-dim" x="30" y="256">terminal never comes forward</text>
+        </g>
+        <!-- inputs -->
+        <path class="wire" d="M240 110 H 300"/><path class="wire" d="M240 190 H 300"/>
+        <g id="talk"><title>Talk: streaming local dictation</title>
+          <rect class="box-p" x="300" y="78" width="170" height="64" rx="12"/>
+          <path class="icon-p" d="M322 96 v14 a7 7 0 0 0 14 0 v-14 a7 7 0 0 0 -14 0 z M317 110 a12 12 0 0 0 24 0 M329 122 v6"/>
+          <text class="t-md" x="352" y="106">Talk</text><text class="t-sm t-dim" x="352" y="126">streams live</text>
+        </g>
+        <g id="shoot"><title>Show: screenshot hotkey drops an image at the current word</title>
+          <rect class="box-p" x="300" y="158" width="170" height="64" rx="12"/>
+          <path class="icon-p" d="M316 178 h8 l3 -5 h10 l3 5 h8 v24 h-32 z"/><circle class="icon-p" cx="332" cy="190" r="5"/>
+          <text class="t-md" x="356" y="186">Show</text><text class="t-sm t-dim" x="356" y="206">at this word</text>
+        </g>
+        <path class="wire" d="M470 110 C 500 110, 500 150, 530 150"/><path class="wire" d="M470 190 C 500 190, 500 150, 530 150"/>
+        <!-- outbox -->
+        <g id="outbox"><title>Outbox: ordered queue per open session; waits while Claude shows a dialog</title>
+          <rect class="box-p" x="530" y="105" width="170" height="90" rx="14"/>
+          <text class="t-md" x="550" y="134">Outbox</text>
+          <rect class="fill-p" x="550" y="148" width="30" height="24" rx="5" opacity=".9"/>
+          <rect class="fill-a" x="586" y="148" width="30" height="24" rx="5" opacity=".9"/>
+          <rect class="fill-p" x="622" y="148" width="30" height="24" rx="5" opacity=".5"/>
+          <text class="t-sm t-dim" x="550" y="188">text · image · text</text>
+        </g>
+        <path class="wire-p" d="M700 150 H 740"/>
+        <!-- pinned session -->
+        <g id="pinned"><title>The open session: one herdr pane running Claude Code, pinned by session id</title>
+          <rect class="box-a" x="740" y="70" width="210" height="160" rx="16"/>
+          <text class="t-md" x="760" y="100">📌 claude · showtell</text>
+          <text class="t-sm t-dim" x="760" y="122">herdr pane w1:p2</text>
+          <rect class="box" x="760" y="138" width="170" height="70" rx="8"/>
+          <text class="t-sm" x="772" y="162">"the button here</text>
+          <text class="t-sm" x="772" y="182">[Image #1] is cut off,</text>
+          <text class="t-sm" x="772" y="200">see [Image #2]"</text>
+        </g>
+        <text class="t-sm t-dim" x="530" y="262">Claude busy? Message queues in its prompt, images intact (tested).</text>
+        <text class="t-sm t-dim" x="530" y="282">Dialog open? Outbox waits, so nothing lands in the dialog.</text>
+      </svg>
+      <figcaption>Later, one Claude session can orchestrate others. Showtell's job is just to get many inputs into it, reliably and in order.</figcaption>
+    </figure>
+  </section>
+
+  <section id="where">
+    <div class="eyebrow">Where things stand</div>
+    <h2>Three questions, three answers</h2>
+    <div class="grid md:grid-cols-3 gap-3 mt-4">
+      <div class="card bg-base-200"><div class="card-body p-5">
+        <div class="eyebrow">Does it exist?</div>
+        <p class="text-lg font-semibold leading-snug">No. The gap is real.</p>
+        <p class="text-sm opacity-75">Popular projects own one part each (Handy 33k★ voice, herdr 43k★ terminal). The few that combine parts are small and none does a persistent target with screenshots.</p>
+        <a class="text-sm" href="landscape.html">See the landscape →</a>
+      </div></div>
+      <div class="card bg-base-200"><div class="card-body p-5">
+        <div class="eyebrow">Can we deliver?</div>
+        <p class="text-lg font-semibold leading-snug">Yes, through herdr's own socket.</p>
+        <p class="text-sm opacity-75">herdr's <code>pane.send_input</code> pastes properly, so screenshot paths become real <code>[Image #N]</code> chips. Messages sent while Claude works queue with images intact.</p>
+        <a class="text-sm" href="delivery.html">See the tests →</a>
+      </div></div>
+      <div class="card bg-base-200"><div class="card-body p-5">
+        <div class="eyebrow">What do we build with?</div>
+        <p class="text-lg font-semibold leading-snug">Swift + FluidAudio.</p>
+        <p class="text-sm opacity-75">Parakeet streaming with custom-word boosting, word timestamps for screenshot placement, ScreenCaptureKit, and a herdr socket client. All local, all permissive licences.</p>
+        <a class="text-sm" href="stack.html">See the pick →</a>
+      </div></div>
+    </div>
+  </section>
+
+  <section id="path">
+    <div class="eyebrow">How we got here</div>
+    <h2>The plan changed twice, for good reasons</h2>
+    <ul class="timeline timeline-vertical timeline-compact mt-4">
+      <li><div class="timeline-middle"><span class="dot d-no"></span></div>
+        <div class="timeline-end timeline-box mb-4"><b>Fork OpenSuperWhisper</b> <span class="opacity-60 text-sm">· first idea</span><br><span class="text-sm opacity-75">Your current dictation app. Dropped: it transcribes only after you stop and can't target a session.</span></div><hr></li>
+      <li><hr><div class="timeline-middle"><span class="dot d-part"></span></div>
+        <div class="timeline-end timeline-box mb-4"><b>Extend localvoxtral</b> <span class="opacity-60 text-sm">· after the landscape redo</span><br><span class="text-sm opacity-75">Streams, knows repo words, talks to herdr. Dropped after you tried it: it binds to the pane in front (missed your iTerm2 drop-down), needs spoken names to route elsewhere, and is built around "agent needs you".</span></div><hr></li>
+      <li><hr><div class="timeline-middle"><span class="dot d-yes"></span></div>
+        <div class="timeline-end timeline-box"><b>Our own small app</b> <span class="opacity-60 text-sm">· your call, today</span><br><span class="text-sm opacity-75">Borrow the best ideas (localvoxtral's herdr client and vocabulary, FluidVoice's preview/final split, VoiceInk's screen capture), add screenshots and the open-session model.</span></div></li>
+    </ul>
+  </section>
+
+  <section id="pages">
+    <div class="eyebrow">In these pages</div>
+    <h2>Read in order, or jump</h2>
+    <div class="grid sm:grid-cols-2 gap-3 mt-4">
+      <a href="landscape.html" class="card bg-base-200 no-underline hover:outline-2 hover:outline-primary"><div class="card-body p-5"><div class="eyebrow">2 · Landscape</div><p class="text-base-content">Competitors, popular building blocks, and what people complain about on HN.</p></div></a>
+      <a href="how-they-did-it.html" class="card bg-base-200 no-underline hover:outline-2 hover:outline-primary"><div class="card-body p-5"><div class="eyebrow">3 · How they did it</div><p class="text-base-content">Inside localvoxtral, FluidVoice, VoiceInk, Handy, herdr add-ons and screenshot tools: what to borrow, what to avoid.</p></div></a>
+      <a href="delivery.html" class="card bg-base-200 no-underline hover:outline-2 hover:outline-primary"><div class="card-body p-5"><div class="eyebrow">4 · Delivery</div><p class="text-base-content">Every way into a running Claude Code session, and the live test results.</p></div></a>
+      <a href="stack.html" class="card bg-base-200 no-underline hover:outline-2 hover:outline-primary"><div class="card-body p-5"><div class="eyebrow">5 · What we pick</div><p class="text-base-content">The proposed stack, the app's shape, open questions and your next decision.</p></div></a>
+    </div>
+  </section>
+
+  <div id="pager"></div>
+</main>
+<script src="nav.js"></script>
+</body>
+</html>
