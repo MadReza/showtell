@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showtell · How they did it</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main class="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+  <header class="pt-12 pb-6">
+    <div class="eyebrow">Page 3 of 5 · Read in the source code, 10 Oct 2026</div>
+    <h1 class="text-4xl font-extrabold tracking-tight mt-2">How they did it</h1>
+    <p class="text-lg mt-3 lede">Every part Showtell needs has been solved well by <i>someone</i>. Nobody solved the part we care about most: a <b>persistent target</b> that gets <b>screenshots</b>. This page takes the six parts one at a time.</p>
+    <div class="flex flex-wrap gap-3 mt-4 text-sm"><span><span class="tag-v">read</span> seen in code, docs or a live test</span><span><span class="tag-i">inferred</span> our reasoning, not checked</span></div>
+  </header>
+
+  <section id="parts" class="!border-t-0 !pt-0">
+    <figure class="!mt-0">
+      <svg viewBox="0 0 960 230" width="100%" role="img" aria-labelledby="pt">
+        <title id="pt">Six parts of Showtell and the tool that does each best</title>
+        <g><title>1 Find the session: herdr agent list (session id per pane)</title>
+          <rect class="box" x="10" y="20" width="300" height="88" rx="14"/><circle class="fill-p" cx="38" cy="48" r="13"/><text class="t-md t-pc" x="33" y="53">1</text>
+          <text class="t-md" x="60" y="53">Find the session</text><text class="t-sm t-dim" x="30" y="80">best: herdr's own agent list</text><text class="t-sm t-dim" x="30" y="98">avoid: guessing from focus</text></g>
+        <g><title>2 Deliver: herdr socket paste</title>
+          <rect class="box" x="330" y="20" width="300" height="88" rx="14"/><circle class="fill-p" cx="358" cy="48" r="13"/><text class="t-md t-pc" x="353" y="53">2</text>
+          <text class="t-md" x="380" y="53">Deliver text + images</text><text class="t-sm t-dim" x="350" y="80">best: herdr pane.send_input</text><text class="t-sm t-dim" x="350" y="98">nobody sends images today</text></g>
+        <g><title>3 Listen: FluidAudio streaming Parakeet</title>
+          <rect class="box" x="650" y="20" width="300" height="88" rx="14"/><circle class="fill-p" cx="678" cy="48" r="13"/><text class="t-md t-pc" x="673" y="53">3</text>
+          <text class="t-md" x="700" y="53">Listen live</text><text class="t-sm t-dim" x="670" y="80">best: FluidAudio (VoiceInk, FluidVoice)</text><text class="t-sm t-dim" x="670" y="98">localvoxtral: Voxtral 4B, heavy</text></g>
+        <g><title>4 Fix words: CTC boost + repo terms</title>
+          <rect class="box" x="10" y="124" width="300" height="88" rx="14"/><circle class="fill-p" cx="38" cy="152" r="13"/><text class="t-md t-pc" x="33" y="157">4</text>
+          <text class="t-md" x="60" y="157">Fix your words</text><text class="t-sm t-dim" x="30" y="184">best: FluidAudio boost + repo terms</text><text class="t-sm t-dim" x="30" y="202">(localvoxtral's dictation.md)</text></g>
+        <g><title>5 Capture: ScreenCaptureKit</title>
+          <rect class="box-p" x="330" y="124" width="300" height="88" rx="14"/><circle class="fill-p" cx="358" cy="152" r="13"/><text class="t-md t-pc" x="353" y="157">5</text>
+          <text class="t-md" x="380" y="157">Capture screenshots</text><text class="t-sm t-dim" x="350" y="184">best: ScreenCaptureKit (Peekaboo, Deiko)</text><text class="t-sm t-dim" x="350" y="202">the part nobody wires to a session</text></g>
+        <g><title>6 Overlay and hotkeys: non-activating panel</title>
+          <rect class="box" x="650" y="124" width="300" height="88" rx="14"/><circle class="fill-p" cx="678" cy="152" r="13"/><text class="t-md t-pc" x="673" y="157">6</text>
+          <text class="t-md" x="700" y="157">Overlay + hotkeys</text><text class="t-sm t-dim" x="670" y="184">everyone: non-activating NSPanel</text><text class="t-sm t-dim" x="670" y="202">never steals focus</text></g>
+      </svg>
+    </figure>
+  </section>
+
+  <!-- 1 -->
+  <section id="find">
+    <div class="eyebrow">1 · Finding the session</div>
+    <h2>localvoxtral follows your focus. We want a pin.</h2>
+    <p class="lede">This is why localvoxtral didn't fit you. It decides the target <b>at the moment you start talking</b>, from whatever is in front. A pinned target needs none of that chain.</p>
+    <figure>
+      <svg viewBox="0 0 960 250" width="100%" role="img" aria-labelledby="ft">
+        <title id="ft">localvoxtral's five-step focus chain compared with a pinned session lookup</title>
+        <text class="t-md" x="10" y="28">localvoxtral: every step must succeed, at the moment you start</text>
+        <g>
+          <rect class="box" x="10" y="44" width="170" height="60" rx="10"/><text class="t-sm" x="24" y="70">1 · front app is</text><text class="t-sm" x="24" y="88">a known terminal</text>
+          <path class="wire" d="M180 74 H 196"/>
+          <rect class="box" x="196" y="44" width="170" height="60" rx="10"/><text class="t-sm" x="210" y="70">2 · ask iTerm2 for</text><text class="t-sm" x="210" y="88">"current window" tty</text>
+          <path class="wire" d="M366 74 H 382"/>
+          <rect class="box" x="382" y="44" width="170" height="60" rx="10"/><text class="t-sm" x="396" y="70">3 · herdr client is</text><text class="t-sm" x="396" y="88">foreground on tty</text>
+          <path class="wire" d="M552 74 H 568"/>
+          <rect class="box" x="568" y="44" width="170" height="60" rx="10"/><text class="t-sm" x="582" y="70">4 · exactly one herdr,</text><text class="t-sm" x="582" y="88">ask pane.current</text>
+          <path class="wire" d="M738 74 H 754"/>
+          <rect class="box" x="754" y="44" width="196" height="60" rx="10"/><text class="t-sm" x="768" y="70">5 · pane ↔ one session</text><text class="t-sm" x="768" y="88">(from plugin hooks)</text>
+        </g>
+        <g><title>Where a drop-down (hotkey) iTerm2 window can break the chain</title>
+          <path class="wire-p wire-dash" d="M95 104 V 132"/><path class="wire-p wire-dash" d="M281 104 V 132"/>
+          <rect class="box-a" x="10" y="132" width="356" height="40" rx="8"/>
+          <text class="t-sm" x="24" y="157">drop-down window: may not count as "front" or "current"</text>
+        </g>
+        <text class="t-md" x="10" y="208">Showtell: pin once, verify before each send</text>
+        <line class="wire" x1="10" y1="218" x2="950" y2="218"/>
+        <text class="t-sm t-dim" x="10" y="242">store {session id, herdr terminal id, pane id} → before each write: pane still runs that Claude? (agent list + process_info) → paste</text>
+      </svg>
+      <figcaption>Steps 1–2 are where your drop-down iTerm2 window most likely failed <span class="tag-i">inferred</span>. Steps 3–5 also abstain whenever two herdr servers or windows exist <span class="tag-v">read</span>.</figcaption>
+    </figure>
+    <div class="grid md:grid-cols-2 gap-3 mt-4">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">localvoxtral <span class="tag-v">read</span></div>
+        <p class="text-sm">A Claude Code plugin's hooks (SessionStart, UserPromptSubmit, Stop, Notification…) send each session's id, cwd, tty, <code>claude_pid</code> and <code>HERDR_PANE_ID</code> to a local socket. The app keeps a registry and expires sessions after 4 h or when the pid dies.</p>
+        <p class="text-sm mt-1"><b>Borrow:</b> its "send that to X" path, which writes to a session's <i>own</i> pane without any focus check, and re-checks before each write that the pane still runs that session.</p>
+        <p class="kbd-path mt-1">ClaudeSessionRegistry.swift · ClaudeSessionJoinResolver+Herdr.swift:70 · +AddressedSend.swift:62</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">herdr itself <span class="tag-v">read · live</span></div>
+        <p class="text-sm"><code>herdr agent list</code> already returns every Claude pane with its <b>session id</b>, folder, title and status (<code>idle · working · blocked · done</code>). No plugin needed: herdr's own hook reports the id.</p>
+        <p class="text-sm mt-1"><b>Borrow:</b> use it directly for the session picker. Subscribe to <code>pane.agent_status_changed</code>, <code>pane.moved</code> and <code>pane.closed</code> to keep the pin valid.</p>
+        <p class="kbd-path mt-1">herdr socket ~/.config/herdr/herdr.sock · agent.list · events.subscribe</p></div></div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="deliver">
+    <div class="eyebrow">2 · Delivering into the pane</div>
+    <h2>Everyone sends text. Nobody sends images.</h2>
+    <p class="lede">Each tool found its own way to paste into a terminal. herdr turned out to have a proper paste built in, which none of them uses.</p>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Tool</th><th>How it puts text in</th><th>Images?</th><th>Worth taking</th></tr></thead>
+        <tbody>
+          <tr><td><b>localvoxtral</b> <span class="tag-v">read</span></td><td><code>pane.send_text</code> (typed), then <code>send_keys enter</code>. Refuses any control character, so a newline can't submit early.</td><td>✗ none in the code</td><td>One write at a time, in order; outcomes <i>ok / refused / unknown</i>; never retries an unknown (it might have landed).</td></tr>
+          <tr><td><b>localvoxtral mod</b> <span class="tag-v">read</span></td><td>Runs inside Claude Code: <code>$.prompt.fill()</code> / <code>$.prompt.submit()</code>; shows a "Listening…" band above the prompt.</td><td>✗ API is text-only; pasted images aren't expanded</td><td>The band idea: "Showtell → showtell session · recording".</td></tr>
+          <tr><td><b>herdr-reviewr · herdr-annotate</b> <span class="tag-v">read</span></td><td><code>pane.send_text</code> wrapped in their own <code>ESC[200~ … ESC[201~</code> paste markers.</td><td>—</td><td>Confirms a working agent accepts a paste mid-turn.</td></tr>
+          <tr><td><b>collie</b> <span class="tag-v">read</span></td><td>Phone → herdr. Saves uploads to disk and pastes their <b>path</b>.</td><td>◐ as file paths</td><td>Same trick Claude Code needs.</td></tr>
+          <tr class="goal-row"><td><b>herdr native</b> <span class="tag-v">tested</span></td><td><code>pane.send_input {text}</code>: herdr wraps it as a real paste. Socket only, no CLI command.</td><td>✓ <code>[Image #N]</code> chips, in order</td><td>Our delivery path. See <a href="delivery.html">Delivery</a>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="listen">
+    <div class="eyebrow">3 · Listening live</div>
+    <h2>Three ways to show words while you talk</h2>
+    <div class="grid md:grid-cols-3 gap-3 mt-4">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">localvoxtral <span class="tag-v">read</span></div>
+        <p class="text-sm">A helper process runs <b>Voxtral Mini 4B</b> (≈3.5 GB) behind a WebSocket shaped like OpenAI's Realtime API. It only ever <b>appends</b> words, so the overlay never has to erase.</p>
+        <p class="text-sm mt-1 opacity-75">Take: the append-only protocol, so engines are swappable.</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">FluidVoice <span class="tag-v">read</span> · GPL</div>
+        <p class="text-sm">Two recognisers: a fast one for the <b>live preview</b>, and a second one with custom-word boosting for the <b>final text</b>.</p>
+        <p class="text-sm mt-1 opacity-75">Take: the preview/final split (re-implement; GPL).</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">VoiceInk <span class="tag-v">read</span> · GPL</div>
+        <p class="text-sm">FluidAudio's true streaming Parakeet with partial results, or re-running a batch model and committing words once two passes <b>agree</b>.</p>
+        <p class="text-sm mt-1 opacity-75">Take: "commit when stable" for the overlay.</p></div></div>
+    </div>
+    <p class="text-sm mt-3 opacity-75">Handy (33k★, MIT, Tauri + Rust) mostly records then transcribes; HN likes it because it does one job, is small, and needs no account. Its fuzzy word fix is easy to copy.</p>
+  </section>
+
+  <!-- 4 -->
+  <section id="words">
+    <div class="eyebrow">4 · Fixing your words</div>
+    <h2>The best results stack a model-level boost and a text-level fix</h2>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Tool</th><th>Where the fix happens</th><th>How</th></tr></thead>
+        <tbody>
+          <tr><td><b>FluidAudio</b> <span class="tag-v">read</span></td><td>in the speech model</td><td>A small extra model spots your terms in the audio and swaps in the right spelling, with aliases ("herder" → herdr). Tested to ≈230 terms.</td></tr>
+          <tr><td><b>localvoxtral</b> <span class="tag-v">read</span></td><td>before + during cleanup</td><td>Terms from the repo's file names and <code>.github/dictation.md</code>. Exact matches fixed directly; sound-alikes go to a local 4B LLM as candidates.</td></tr>
+          <tr><td><b>VoiceInk</b> <span class="tag-v">read</span></td><td>after</td><td>LLM prompt with your vocabulary, a replace list, and "auto-learn" from your later edits. No model-level boost locally.</td></tr>
+          <tr><td><b>Handy</b> <span class="tag-v">read</span></td><td>after</td><td>Fuzzy match (Levenshtein + Soundex) against your list.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm mt-3"><b>For Showtell:</b> because we know the pinned session's folder, we can load that repo's <code>.github/dictation.md</code> and file names as boost terms automatically, and switch them when you pin a different session.</p>
+  </section>
+
+  <!-- 5 -->
+  <section id="capture">
+    <div class="eyebrow">5 · Capturing screenshots</div>
+    <h2>Capture is easy. Keeping order is a naming problem.</h2>
+    <div class="overflow-x-auto mt-4 rounded-box bg-base-200">
+      <table class="table">
+        <thead><tr><th>Tool</th><th>Capture</th><th>Pick a region</th><th>Keeps order by</th></tr></thead>
+        <tbody>
+          <tr><td><b>Peekaboo</b> <span class="tag-v">read</span></td><td>ScreenCaptureKit, falls back to <code>screencapture</code></td><td>agent passes coordinates</td><td>—</td></tr>
+          <tr><td><b>Deiko</b> <span class="tag-v">read</span></td><td>ScreenCaptureKit, hides itself, crops</td><td>⌥-drag on a click-through overlay</td><td>numbered files + one text with paths in time order</td></tr>
+          <tr><td><b>ShellShot</b> <span class="tag-v">read</span></td><td><code>screencapture -i</code></td><td>macOS crosshair</td><td>timestamped names</td></tr>
+          <tr><td><b>MarkuprPlus</b> <span class="tag-v">read</span></td><td>video frames (ffmpeg)</td><td>⌘-drag overlay</td><td>MX-001, MX-002… in a report</td></tr>
+          <tr><td><b>VoiceInk</b> <span class="tag-v">read</span></td><td>front window → ScreenCaptureKit → on-device OCR</td><td>whole window</td><td>uses the OCR text as context, not the image</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm mt-3"><b>For Showtell:</b> ScreenCaptureKit with Showtell excluded from the shot; region by drag or the front window; OCR text from the shot can feed the word list (VoiceInk's idea) while the image itself goes to Claude.</p>
+  </section>
+
+  <!-- 6 -->
+  <section id="overlay">
+    <div class="eyebrow">6 · Overlay and hotkeys</div>
+    <h2>Everyone converged on the same window type</h2>
+    <p class="lede">A non-activating floating panel (<code>NSPanel</code>, <code>.nonactivatingPanel</code>, all Spaces) shows the words without taking focus from the app you're looking at. Hotkeys: Carbon <code>RegisterEventHotKey</code> for normal shortcuts (no extra permission), an event tap only for modifier-only push-to-talk (needs Accessibility). localvoxtral registers Tab/arrow keys <b>only while the overlay is up</b>, a nice trick for choosing things mid-dictation.</p>
+  </section>
+
+  <section id="licence">
+    <div class="eyebrow">Licences</div>
+    <h2>What we may copy, and what we may only learn from</h2>
+    <div class="grid sm:grid-cols-2 gap-3 mt-4">
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Copy freely (keep the notice)</div>
+        <p class="text-sm"><b>FluidAudio</b> Apache-2.0 · <b>localvoxtral</b> MIT · <b>Handy</b> MIT · <b>OpenWhispr</b> MIT · herdr add-ons (check each)</p></div></div>
+      <div class="card bg-base-200"><div class="card-body p-5"><div class="eyebrow">Read only, re-implement</div>
+        <p class="text-sm"><b>FluidVoice</b>, <b>VoiceInk</b>, <b>TypeWhisper</b> are GPL-3.0: copying their code would make Showtell GPL. Speech model weights have their own licences (check the model cards).</p></div></div>
+    </div>
+  </section>
+
+  <div id="pager"></div>
+</main>
+<script src="nav.js"></script>
+</body>
+</html>
