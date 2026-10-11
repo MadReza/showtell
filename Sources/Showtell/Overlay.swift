@@ -156,6 +156,7 @@ struct TranscriptEditor: NSViewRepresentable {
         let atEnd = tv.selectedRange().location >= (tv.string as NSString).length
         context.coordinator.applyingUpdate = true
         tv.string = text
+        tv.undoManager?.removeAllActions()  // old undo ranges no longer match the new text
         context.coordinator.applyingUpdate = false
         if atEnd || tv.window?.firstResponder !== tv {
             tv.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))

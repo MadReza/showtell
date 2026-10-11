@@ -27,7 +27,8 @@ public struct Composer: Sendable {
     /// (seconds of audio, words in the transcript) at each update.
     private var history: [(time: Double, words: Int)] = []
     private var frozenText = ""
-    private var frozenEngineWords = 0
+    /// Recogniser words that were on screen when you edited; later speech starts after them.
+    private var frozenEngine: [String] = []
     private var nextNumber = 1
 
     public init(lag: Double = 2.1) {
@@ -64,18 +65,20 @@ public struct Composer: Sendable {
     /// The user changed the overlay text. What they see becomes fixed.
     public mutating func userEdited(_ text: String) {
         frozenText = text
-        frozenEngineWords = engineWords.count
+        frozenEngine = engineWords
         for i in shots.indices { shots[i].frozen = true }
     }
 
     /// The text to show and to send, with `[📷 n]` markers.
     public func render() -> String {
-        let live = Array(engineWords.dropFirst(frozenEngineWords))
+        let words = engineWords
+        let liveStart = Composer.resumeIndex(frozen: frozenEngine, current: words)
+        let live = Array(words.dropFirst(liveStart))
         var slots: [Int: [Int]] = [:]  // word index in `live` -> shot numbers placed before it
         for shot in shots where !shot.frozen {
             let timed = wordEnds.filter { $0 <= shot.time }.count
             let caughtUp = history.first(where: { $0.time >= shot.time + lag })?.words ?? 0
-            let index = max(timed, shot.wordsAtShot, caughtUp) - frozenEngineWords
+            let index = max(timed, shot.wordsAtShot, caughtUp) - liveStart
             slots[min(max(index, 0), live.count), default: []].append(shot.number)
         }
         var tokens: [String] = []
@@ -92,6 +95,24 @@ public struct Composer: Sendable {
 
     public func pieces() -> [Piece] {
         ShotMarker.pieces(from: render(), shots: shotURLs)
+    }
+
+    /// Where speech after an edit begins in the current transcript. The recogniser may have
+    /// rewritten words since ("to day" → "today"), so the frozen words' last few are looked up
+    /// near their old position instead of trusting the old word count.
+    static func resumeIndex(frozen: [String], current: [String]) -> Int {
+        guard !frozen.isEmpty else { return 0 }
+        func norm(_ w: String) -> String { w.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let f = frozen.map(norm), c = current.map(norm)
+        for k in stride(from: min(3, f.count), through: 1, by: -1) {
+            let anchor = Array(f.suffix(k))
+            // Search ends near the old position first, then anywhere.
+            let candidates = (0...max(0, c.count - k)).sorted { abs($0 + k - f.count) < abs($1 + k - f.count) }
+            for start in candidates where start + k <= c.count && Array(c[start..<start + k]) == anchor {
+                if abs(start + k - f.count) <= 4 { return start + k }
+            }
+        }
+        return min(frozen.count, current.count)
     }
 
     private var engineWords: [String] {

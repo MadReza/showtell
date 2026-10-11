@@ -4,22 +4,32 @@ import Foundation
 import ShowtellCore
 
 /// Live local transcription: microphone → FluidAudio streaming Parakeet, with your
-/// terms boosted. Reports the transcript so far and when each new word ended.
-final class SpeechEngine: @unchecked Sendable {
-    enum State: Equatable { case notLoaded, loading(String), ready, failed(String) }
+/// terms boosted. An actor, so start, stop and cancel never overlap.
+actor SpeechEngine {
+    enum State: Equatable, Sendable { case notLoaded, loading(String), ready, failed(String) }
+
+    /// Transcript so far, end times of newly timed words, and the audio time the transcript covers.
+    typealias Update = @Sendable (_ text: String, _ wordEnds: [Double], _ time: Double) -> Void
+
+    struct NoMicrophone: LocalizedError {
+        var errorDescription: String? { "no microphone input is available" }
+    }
 
     private(set) var state: State = .notLoaded
-    var onState: ((State) -> Void)?
+    private let onState: @Sendable (State) -> Void
 
     private let asr = StreamingUnifiedAsrManager()
     private var ctcModels: CtcModels?
     private var tokenizer: CtcTokenizer?
-    private let audio = AVAudioEngine()
+    private var audio: AVAudioEngine?
     private var pump: Task<Void, Never>?
     private var feed: AsyncStream<AVAudioPCMBuffer>.Continuation?
-    private var samplesIn: Int64 = 0
-    private var inputRate: Double = 48_000
-    private let lock = NSLock()
+    private var configObserver: NSObjectProtocol?
+    private let clock = AudioClock()
+
+    init(onState: @escaping @Sendable (State) -> Void) {
+        self.onState = onState
+    }
 
     /// Downloads (first run only) and loads the speech and word-boost models.
     func load() async {
@@ -35,42 +45,54 @@ final class SpeechEngine: @unchecked Sendable {
         }
     }
 
-    /// Seconds of audio captured since `start`.
-    var elapsed: Double {
-        lock.lock(); defer { lock.unlock() }
-        return Double(samplesIn) / inputRate
-    }
+    /// Seconds of microphone audio captured since `start` (the clock screenshots are stamped with).
+    nonisolated var captured: Double { clock.captured }
 
-    /// Starts listening. `onUpdate` gets the full transcript and the end times of newly timed words.
-    func start(terms: [VocabularyTerm], onUpdate: @escaping @Sendable (String, [Double], Double) -> Void) async throws {
+    func start(terms: [VocabularyTerm], onUpdate: @escaping Update) async throws {
+        await stopAudio()
         try await asr.reset()
         await configureBoost(terms)
 
-        let input = audio.inputNode
-        let format = input.outputFormat(forBus: 0)
-        resetClock(rate: format.sampleRate)
+        let engine = AVAudioEngine()  // fresh each time: picks up the current input device
+        let format = engine.inputNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw NoMicrophone() }
+        clock.reset(rate: format.sampleRate)
+
         let (stream, feed) = AsyncStream<AVAudioPCMBuffer>.makeStream()
         self.feed = feed
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            guard let self else { return }
-            self.lock.lock(); self.samplesIn += Int64(buffer.frameLength); self.lock.unlock()
+        let clock = clock
+        let tap: AVAudioNodeTapBlock = { buffer, _ in
+            clock.didCapture(buffer.frameLength)
             feed.yield(buffer)
         }
-        audio.prepare()
-        try audio.start()
+        engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format, block: tap)
+        engine.prepare()
+        try engine.start()
+        audio = engine
+
+        // A headset plugged in or removed stops the engine: reinstall the tap in the new format.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { _ in
+            let fmt = engine.inputNode.outputFormat(forBus: 0)
+            engine.inputNode.removeTap(onBus: 0)
+            guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return }
+            engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: fmt, block: tap)
+            try? engine.start()
+        }
 
         // One consumer keeps audio in order; the transcript is refreshed about 4 times a second.
-        pump = Task { [asr, unowned self] in
+        pump = Task { [asr] in
             var last = Date.distantPast
             for await buffer in stream {
                 try? await asr.appendAudio(buffer)
-                guard Date().timeIntervalSince(last) >= 0.25 else { continue }
+                clock.didProcess(buffer.frameLength, rate: buffer.format.sampleRate)
+                guard Date().timeIntervalSince(last) >= 0.25, !Task.isCancelled else { continue }
                 last = Date()
                 try? await asr.processBufferedAudio()
                 let text = await asr.getPartialTranscript()
                 let ends = await asr.consumeWordTimings().map(\.endTime)
-                onUpdate(text, ends, self.elapsed)
+                if !Task.isCancelled { onUpdate(text, ends, clock.processed) }
             }
         }
     }
@@ -78,27 +100,19 @@ final class SpeechEngine: @unchecked Sendable {
     /// Stops listening and returns the final transcript (the tail is rescored),
     /// the last word timings and the audio time it covers.
     func stop() async -> (text: String, wordEnds: [Double], time: Double) {
-        audio.inputNode.removeTap(onBus: 0)
-        audio.stop()
-        feed?.finish()
-        await pump?.value  // every captured buffer is appended before the flush
-        pump = nil
+        await stopAudio(drain: true)
         var text = await asr.getPartialTranscript()
         if let final = try? await asr.finish() { text = final }
-        return (text, await asr.consumeWordTimings().map(\.endTime), elapsed)
+        return (text, await asr.consumeWordTimings().map(\.endTime), clock.processed)
     }
 
     func cancel() async {
-        audio.inputNode.removeTap(onBus: 0)
-        audio.stop()
-        feed?.finish()
-        pump?.cancel()
-        pump = nil
+        await stopAudio()
         try? await asr.reset()
     }
 
-    /// Self-test: streams an audio file through the same path as the microphone, in real-time-sized chunks.
-    func transcribeFile(_ url: URL, terms: [VocabularyTerm], onUpdate: @escaping @Sendable (String, [Double], Double) -> Void) async throws -> String {
+    /// Self-test: streams an audio file through the same recogniser, in quarter-second chunks.
+    func transcribeFile(_ url: URL, terms: [VocabularyTerm], onUpdate: Update) async throws -> String {
         try await asr.reset()
         await configureBoost(terms)
         let file = try AVAudioFile(forReading: url)
@@ -117,10 +131,18 @@ final class SpeechEngine: @unchecked Sendable {
         return text
     }
 
-    private func resetClock(rate: Double) {
-        lock.lock(); defer { lock.unlock() }
-        samplesIn = 0
-        inputRate = rate
+    /// Stops the microphone. With `drain`, waits until every captured buffer reached the recogniser.
+    private func stopAudio(drain: Bool = false) async {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = nil
+        audio?.inputNode.removeTap(onBus: 0)
+        audio?.stop()
+        audio = nil
+        feed?.finish()
+        feed = nil
+        if !drain { pump?.cancel() }
+        await pump?.value
+        pump = nil
     }
 
     private func configureBoost(_ terms: [VocabularyTerm]) async {
@@ -136,6 +158,41 @@ final class SpeechEngine: @unchecked Sendable {
 
     private func setState(_ s: State) {
         state = s
-        DispatchQueue.main.async { self.onState?(s) }
+        onState(s)
+    }
+}
+
+/// Sample counters shared with the real-time audio thread.
+final class AudioClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var capturedFrames: Int64 = 0
+    private var rate: Double = 48_000
+    private var processedSeconds: Double = 0
+
+    func reset(rate: Double) {
+        lock.lock(); defer { lock.unlock() }
+        capturedFrames = 0
+        processedSeconds = 0
+        self.rate = rate
+    }
+
+    func didCapture(_ frames: AVAudioFrameCount) {
+        lock.lock(); defer { lock.unlock() }
+        capturedFrames += Int64(frames)
+    }
+
+    func didProcess(_ frames: AVAudioFrameCount, rate: Double) {
+        lock.lock(); defer { lock.unlock() }
+        processedSeconds += Double(frames) / rate
+    }
+
+    var captured: Double {
+        lock.lock(); defer { lock.unlock() }
+        return Double(capturedFrames) / rate
+    }
+
+    var processed: Double {
+        lock.lock(); defer { lock.unlock() }
+        return processedSeconds
     }
 }

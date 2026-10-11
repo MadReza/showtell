@@ -30,8 +30,8 @@ pasted without Enter.
   first words of list items, the same file VS Code and localvoxtral read).
 - **Edit replacements…**: `wrong => right` lines applied to the finished text.
 
-Files live in `~/Library/Application Support/Showtell/` (settings, terms, screenshots,
-`last-message.txt` if a delivery fails).
+Files live in `~/Library/Application Support/Showtell/` (settings, terms, screenshots, the latest
+message, and `unsent-*.txt` for any message that could not be delivered).
 
 ## Build
 
@@ -44,7 +44,7 @@ open build/Showtell.app
 ```
 
 The first launch downloads the speech models (about 700 MB). macOS asks for microphone access on
-the first recording, and for Accessibility so the bar can notice ⌘⇧3/4/5 and hide; without it
+the first recording, and for Accessibility so the bar can notice ⌘⌃⇧3/4 and hide; without it
 the bar is still kept out of screenshots.
 
 Debug tools:

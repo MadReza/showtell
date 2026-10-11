@@ -34,11 +34,14 @@ public enum DeliveryEvent: Equatable, Sendable {
 public enum DeliveryError: Error, Equatable, CustomStringConvertible {
     case targetGone(String)
     case stillBlocked(String)
+    /// An earlier message stopped halfway; pasting this one would land on its leftovers.
+    case earlierMessageFailed
 
     public var description: String {
         switch self {
         case .targetGone(let n): return "\(n) is no longer running in herdr"
         case .stillBlocked(let n): return "\(n) kept a dialog open; message not sent"
+        case .earlierMessageFailed: return "an earlier message failed partway, so this one was held back"
         }
     }
 }
@@ -63,6 +66,9 @@ public actor Outbox {
     private let timing: Timing
     private let sleep: @Sendable (Double) async -> Void
     private var tail: Task<Void, Never>?
+    private var lastTicket = 0
+    /// Messages queued up to this ticket are dropped: one before them failed after pasting part of itself.
+    private var haltThrough = 0
     public var onEvent: (@Sendable (DeliveryEvent) -> Void)?
 
     public init(
@@ -83,11 +89,15 @@ public actor Outbox {
     @discardableResult
     public func enqueue(_ pieces: [Piece], to target: PinnedTarget, submit: Bool) async -> Result<PinnedTarget, Error> {
         let previous = tail
+        lastTicket += 1
+        let ticket = lastTicket
         let task = Task<Result<PinnedTarget, Error>, Never> {
             await previous?.value
+            if ticket <= self.haltThrough { return .failure(DeliveryError.earlierMessageFailed) }
             do {
                 return .success(try await self.deliver(pieces, to: target, submit: submit))
             } catch {
+                if self.pastedSomething { self.haltThrough = self.lastTicket }
                 self.emit(.failed(String(describing: error)))
                 return .failure(error)
             }
@@ -97,10 +107,12 @@ public actor Outbox {
     }
 
     private func emit(_ event: DeliveryEvent) { onEvent?(event) }
+    private var pastedSomething = false
 
     /// Returns the target as found (its pane id may have changed).
     func deliver(_ pieces: [Piece], to target: PinnedTarget, submit: Bool) async throws -> PinnedTarget {
         guard !pieces.isEmpty else { return target }
+        pastedSomething = false
         var current = try await waitUntilReady(target)
         emit(.sending(current.name))
 
@@ -108,9 +120,11 @@ public actor Outbox {
             switch piece {
             case .text(let s):
                 try await transport.paste(s, pane: current.paneID)
+                pastedSomething = true
                 await sleep(timing.afterText)
             case .image(let url):
                 try await transport.paste(url.path, pane: current.paneID)
+                pastedSomething = true
                 await sleep(timing.afterImage)
             }
         }
