@@ -31,6 +31,25 @@ import Testing
         #expect(c.render() == "this button is [📷 1] cut off")
     }
 
+    @Test func placesShotOneLagLaterWithoutTimings() {
+        var c = Composer(lag: 2)
+        c.updateTranscript("the", at: 1)
+        c.addShot(URL(fileURLWithPath: "/a.png"), at: 1.5)  // said "the login button" by now
+        c.updateTranscript("the login", at: 2.5)
+        c.updateTranscript("the login button", at: 3.6)  // first update ≥ 1.5 + 2
+        c.updateTranscript("the login button is cut off", at: 5)
+        #expect(c.render() == "the login button [📷 1] is cut off")
+    }
+
+    @Test func shotNearTheEndGoesLastAfterFinish() {
+        var c = Composer(lag: 2)
+        c.updateTranscript("look at", at: 4)
+        c.addShot(URL(fileURLWithPath: "/a.png"), at: 4.5)
+        c.updateTranscript("look at this", at: 5)
+        c.finish(at: 5)
+        #expect(c.render() == "look at this [📷 1]")
+    }
+
     @Test func shotNeverPlacedBeforeWordsAlreadyShown() {
         var c = Composer()
         c.updateTranscript("one two three")  // no timings at all

@@ -11,6 +11,8 @@ usage:
   showtell-cli sessions
   showtell-cli send <pane-id|session-id> [--submit] <piece>...
       a piece is text, or @/absolute/path.png for a screenshot
+  showtell-cli toggle | cancel
+      same as pressing the hotkey / the cancel shortcut in the running app
 """
 
 func fail(_ message: String) -> Never {
@@ -57,6 +59,10 @@ case "send":
             fail("\(error)")
         }
     } catch { fail("\(error)") }
+
+case "toggle", "cancel":
+    DistributedNotificationCenter.default().postNotificationName(
+        .init("dev.showtell.\(args[0])"), object: nil, userInfo: nil, deliverImmediately: true)
 
 default:
     fail(usage)
