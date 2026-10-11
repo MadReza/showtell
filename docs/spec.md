@@ -37,7 +37,7 @@ sessions; Showtell's job is to get many inputs into it reliably.
 | Bar | Never steals focus until clicked, never appears in screenshots or recordings, hides on ⌘⌃⇧3/4 (copy to clipboard) and reappears when the shot arrives (or after 20 s / Esc). |
 | Delivery | Into the pinned herdr pane without focusing it. Each screenshot arrives as an `[Image #n]` attachment, in order. Works while Claude is busy (Claude Code queues it). Never pastes while Claude shows a dialog: waits instead. |
 | Robustness | The pin follows the Claude session id if the pane moves. If a message can't be delivered, say so and save it (`unsent-<id>.txt`). If one fails halfway, messages already queued behind it are held back rather than pasted onto its leftovers. |
-| Controls | Hotkey and "second press sends" are settings now; fuller customization of the controls later. |
+| Controls | A Settings window (menu → Settings…, ⌘,): record the start/send and cancel shortcuts (a key chord, or a single modifier tapped on its own; default left ⌥ tap and ⌃⌥⌫), the behaviour toggles, permissions, your words and replacements. |
 
 ## Behaviour details
 
@@ -71,4 +71,3 @@ after it.
   [reports/delivery-tests.md](reports/delivery-tests.md)).
 - Faster preview to hide the 2 s lag.
 - Region capture by Showtell itself, OCR terms from screenshots.
-- Settings UI beyond the menu and `settings.json`.

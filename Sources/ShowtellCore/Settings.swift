@@ -1,13 +1,53 @@
 import Foundation
 
-/// User settings, stored as JSON in ~/Library/Application Support/Showtell/settings.json.
+/// A keyboard shortcut: a key with modifiers (⌃⌥Space), or one modifier tapped on its own (left ⌥).
+public struct Shortcut: Codable, Equatable, Sendable {
+    /// Carbon virtual key code; nil for a modifier tap.
+    public var keyCode: UInt32?
+    /// Carbon modifier mask: cmdKey 0x100, shiftKey 0x200, optionKey 0x800, controlKey 0x1000.
+    public var modifiers: UInt32
+    /// How the key is shown ("Space", "K"), captured when it was recorded.
+    public var keyName: String?
+    /// For a modifier tap: leftOption, rightOption, leftControl, rightControl, leftCommand,
+    /// rightCommand, leftShift or rightShift.
+    public var tap: String?
+
+    public static func chord(_ keyCode: UInt32, _ modifiers: UInt32, _ keyName: String) -> Shortcut {
+        Shortcut(keyCode: keyCode, modifiers: modifiers, keyName: keyName, tap: nil)
+    }
+
+    public static func tap(_ name: String) -> Shortcut {
+        Shortcut(keyCode: nil, modifiers: 0, keyName: nil, tap: name)
+    }
+
+    public static let tapNames: [String: String] = [
+        "leftOption": "Left ⌥", "rightOption": "Right ⌥", "leftControl": "Left ⌃", "rightControl": "Right ⌃",
+        "leftCommand": "Left ⌘", "rightCommand": "Right ⌘", "leftShift": "Left ⇧", "rightShift": "Right ⇧",
+    ]
+
+    /// "⌃⌥Space", or "Left ⌥ tap".
+    public var label: String {
+        if let tap { return (Self.tapNames[tap] ?? tap) + " tap" }
+        return Self.describe(modifiers: modifiers) + (keyName ?? keyCode.map { "key \($0)" } ?? "")
+    }
+
+    public static func describe(modifiers: UInt32) -> String {
+        var s = ""
+        if modifiers & 0x1000 != 0 { s += "⌃" }
+        if modifiers & 0x800 != 0 { s += "⌥" }
+        if modifiers & 0x200 != 0 { s += "⇧" }
+        if modifiers & 0x100 != 0 { s += "⌘" }
+        return s
+    }
+}
+
+/// User settings, stored as JSON in ~/Library/Application Support/Showtell/settings.json and
+/// edited in the Settings window.
 public struct Settings: Codable, Equatable, Sendable {
-    /// Carbon virtual key code and modifier mask (cmdKey 0x100, shiftKey 0x200, optionKey 0x800, controlKey 0x1000).
-    public var hotKeyCode: UInt32 = 49  // space
-    public var hotKeyModifiers: UInt32 = 0x1000 | 0x800  // ⌃⌥
-    /// A modifier tapped on its own also starts and sends: leftOption, rightOption, leftControl,
-    /// rightControl, leftCommand, rightCommand, leftShift, rightShift, or "off".
-    public var tapKey = "leftOption"
+    /// Starts a recording, and sends it on the second press.
+    public var startShortcut = Shortcut.tap("leftOption")
+    /// Throws the recording away. Active only while recording.
+    public var cancelShortcut = Shortcut.chord(51, 0x1000 | 0x800, "⌫")
     /// Second press sends with Enter. Off: the message is pasted and you press Enter yourself.
     public var submitOnSecondPress = true
     /// Hide the bar while a native ⌘⌃⇧3/4 (copy to clipboard) screenshot is being taken.
@@ -16,15 +56,35 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init() {}
 
+    enum CodingKeys: String, CodingKey {
+        case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned
+        case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Settings()
-        hotKeyCode = try c.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? d.hotKeyCode
-        hotKeyModifiers = try c.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers) ?? d.hotKeyModifiers
-        tapKey = try c.decodeIfPresent(String.self, forKey: .tapKey) ?? d.tapKey
+        if let s = try c.decodeIfPresent(Shortcut.self, forKey: .startShortcut) {
+            startShortcut = s
+        } else if let tap = try c.decodeIfPresent(String.self, forKey: .tapKey), tap != "off" {
+            startShortcut = .tap(tap)
+        } else if let code = try c.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) {
+            let mods = try c.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers) ?? 0x1000 | 0x800
+            startShortcut = .chord(code, mods, code == 49 ? "Space" : "key \(code)")
+        }
+        cancelShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .cancelShortcut) ?? d.cancelShortcut
         submitOnSecondPress = try c.decodeIfPresent(Bool.self, forKey: .submitOnSecondPress) ?? d.submitOnSecondPress
         hideDuringScreenshots = try c.decodeIfPresent(Bool.self, forKey: .hideDuringScreenshots) ?? d.hideDuringScreenshots
         pinned = try c.decodeIfPresent(PinnedTarget.self, forKey: .pinned)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(startShortcut, forKey: .startShortcut)
+        try c.encode(cancelShortcut, forKey: .cancelShortcut)
+        try c.encode(submitOnSecondPress, forKey: .submitOnSecondPress)
+        try c.encode(hideDuringScreenshots, forKey: .hideDuringScreenshots)
+        try c.encodeIfPresent(pinned, forKey: .pinned)
     }
 }
 

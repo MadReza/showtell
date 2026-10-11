@@ -27,7 +27,7 @@ Updated 10 Oct 2026. Spec: [spec.md](spec.md).
 1. **First real run by you** (needs your clicks once): microphone permission, Accessibility
    permission, then a real dictation with screenshots into a herdr session.
 2. **Latency:** try a fast preview (Parakeet EOU 160 ms) under the boosted transcript if 2 s feels slow.
-3. **Controls:** settings for push-to-talk vs toggle, send vs paste, cancel key; a small settings window.
+3. **Controls:** ✓ Settings window with shortcut recording (11 Oct). Still open: push-to-talk (hold) as an alternative to toggle.
 4. **More terminals:** iTerm2 plain tabs (AppleScript `write text` with paste markers), tmux
    (`paste-buffer -p`). Rules already verified.
 5. **Region capture and OCR terms:** optional ScreenCaptureKit capture; feed OCR words to the boost.

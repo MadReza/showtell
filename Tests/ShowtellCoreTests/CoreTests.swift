@@ -101,6 +101,30 @@ import Testing
     }
 }
 
+@Suite struct SettingsTests {
+    @Test func shortcutLabels() {
+        #expect(Shortcut.tap("leftOption").label == "Left ⌥ tap")
+        #expect(Shortcut.chord(49, 0x1000 | 0x800, "Space").label == "⌃⌥Space")
+        #expect(Shortcut.chord(40, 0x100 | 0x200, "K").label == "⇧⌘K")
+    }
+
+    @Test func oldSettingsFilesCarryOver() throws {
+        let tap = #"{"hotKeyCode":49,"hotKeyModifiers":6144,"tapKey":"leftOption","submitOnSecondPress":false}"#
+        let a = try JSONDecoder().decode(Settings.self, from: Data(tap.utf8))
+        #expect(a.startShortcut == .tap("leftOption"))
+        #expect(a.submitOnSecondPress == false)
+        let chord = #"{"hotKeyCode":49,"hotKeyModifiers":6144,"tapKey":"off"}"#
+        #expect(try JSONDecoder().decode(Settings.self, from: Data(chord.utf8)).startShortcut == .chord(49, 6144, "Space"))
+    }
+
+    @Test func roundTrip() throws {
+        var s = Settings()
+        s.startShortcut = .chord(40, 0x100, "K")
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s)
+    }
+}
+
 @Suite struct VocabularyTests {
     @Test func dictationFile() {
         let md = """

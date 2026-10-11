@@ -16,7 +16,9 @@ final class AppController: NSObject, NSMenuDelegate {
     private let hotKeys = HotKeys()
     private let clipboard = ClipboardWatcher()
     private let screenshotKeys = ScreenshotKeyMonitor()
-    private var tap: ModifierTap?
+    private var startBinding: ShortcutBinding?
+    private var cancelBinding: ShortcutBinding?
+    private lazy var settingsWindow = SettingsWindow(storage: storage)
     private var trustTimer: Timer?
     private let panel = OverlayPanel()
     private var statusItem: NSStatusItem!
@@ -30,7 +32,6 @@ final class AppController: NSObject, NSMenuDelegate {
     private var speechStart: Task<Bool, Never>?
     private var speechListening = false
     private var pendingSends = 0
-    private var cancelKey: UInt32?
     private var ticker: Timer?
     private var reappearWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
@@ -73,9 +74,12 @@ final class AppController: NSObject, NSMenuDelegate {
         center.addObserver(forName: .init("dev.showtell.cancel"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancelRecording() }
         }
+        center.addObserver(forName: .init("dev.showtell.settings"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openSettings() }
+        }
 
         Task { await speech.load() }
-        if (tap != nil || settings.hideDuringScreenshots), !ScreenshotKeyMonitor.isTrusted {
+        if needsAccessibility, !ScreenshotKeyMonitor.isTrusted {
             ScreenshotKeyMonitor.askForPermission()
             watchForTrust()
         }
@@ -88,7 +92,9 @@ final class AppController: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated {
                 guard let self, ScreenshotKeyMonitor.isTrusted else { return }
                 timer.invalidate()
-                self.tap?.start()
+                self.startBinding?.refresh()
+                self.cancelBinding?.refresh()
+                self.settingsWindow.refresh()
                 if self.state == .recording, self.settings.hideDuringScreenshots { self.screenshotKeys.start() }
                 self.flash(.info("Accessibility allowed · \(self.hotKeyLabel) to start talking"), for: 2.5)
             }
@@ -97,20 +103,44 @@ final class AppController: NSObject, NSMenuDelegate {
 
     // MARK: Hotkey
 
-    private var hotKeyLabel: String {
-        let chord = HotKeys.describe(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers)
-        guard tap != nil, let name = ModifierTap.labels[settings.tapKey] else { return chord }
-        return "\(name) (or \(chord))"
+    private var hotKeyLabel: String { settings.startShortcut.label }
+    private var needsAccessibility: Bool {
+        settings.startShortcut.tap != nil || settings.cancelShortcut.tap != nil || settings.hideDuringScreenshots
     }
 
     private func registerMainHotKey() {
-        let ok = hotKeys.register(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers) { [weak self] in
-            self?.toggle()
+        startBinding?.stop()
+        startBinding = ShortcutBinding(settings.startShortcut, hotKeys: hotKeys) { [weak self] in self?.toggle() }
+        if startBinding?.ok == false { flash(.error("\(hotKeyLabel) is taken by another app; pick another in Settings")) }
+    }
+
+    /// Settings changed in the Settings window: save and listen for the new shortcuts.
+    private func apply(_ new: Settings) {
+        let old = settings
+        settings = new
+        settings.pinned = old.pinned  // the window doesn't edit the open session; keep the latest
+        storage.save(settings)
+        if new.startShortcut != old.startShortcut { registerMainHotKey() }
+        if new.cancelShortcut != old.cancelShortcut, state == .recording { bindCancel() }
+        if needsAccessibility, !ScreenshotKeyMonitor.isTrusted { watchForTrust() }
+    }
+
+    /// The Settings window records a new shortcut: the current ones must not fire meanwhile.
+    private func pauseShortcuts(_ paused: Bool) {
+        if paused {
+            startBinding?.stop()
+            cancelBinding?.stop()
+        } else {
+            registerMainHotKey()
+            if state == .recording { bindCancel() }
         }
-        if ok == nil { flash(.error("\(hotKeyLabel) is taken by another app; change hotKeyCode in settings.json")) }
-        tap = ModifierTap(name: settings.tapKey)
-        tap?.onTap = { [weak self] in self?.toggle() }
-        tap?.start()
+    }
+
+    private func bindCancel() {
+        cancelBinding?.stop()
+        cancelBinding = ShortcutBinding(settings.cancelShortcut, hotKeys: hotKeys) { [weak self] in
+            self?.cancelRecording()
+        }
     }
 
     func toggle() {
@@ -142,9 +172,7 @@ final class AppController: NSObject, NSMenuDelegate {
         refreshHint()
         panel.present()
 
-        cancelKey = hotKeys.register(keyCode: UInt32(kVK_Delete), modifiers: settings.hotKeyModifiers) { [weak self] in
-            self?.cancelRecording()
-        }
+        bindCancel()
         clipboard.start()
         if settings.hideDuringScreenshots { screenshotKeys.start() }
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -296,8 +324,8 @@ final class AppController: NSObject, NSMenuDelegate {
         screenshotKeys.stop()
         ticker?.invalidate()
         reappearWork?.cancel()
-        hotKeys.unregister(cancelKey)
-        cancelKey = nil
+        cancelBinding?.stop()
+        cancelBinding = nil
         panel.reappear()
     }
 
@@ -318,7 +346,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func refreshHint() {
         let send = settings.submitOnSecondPress ? "send" : "paste"
-        var parts = ["\(hotKeyLabel) to \(send)", "\(HotKeys.describe(keyCode: 51, modifiers: settings.hotKeyModifiers)) to cancel", "⌘⌃⇧4 adds a screenshot"]
+        var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel", "⌘⌃⇧4 adds a screenshot"]
         switch speechState {
         case .loading(let s): parts.insert(s, at: 0)
         case .failed(let s): parts.insert(s + " (type instead)", at: 0)
@@ -388,13 +416,13 @@ final class AppController: NSObject, NSMenuDelegate {
         let hide = item("Hide bar during screenshots", #selector(toggleHide))
         hide.state = settings.hideDuringScreenshots ? .on : .off
         menu.addItem(hide)
-        if tap != nil || settings.hideDuringScreenshots, !ScreenshotKeyMonitor.isTrusted {
-            menu.addItem(item("Allow Accessibility (for the ⌥ tap and ⌘⌃⇧4)…", #selector(askAccessibility)))
+        if needsAccessibility, !ScreenshotKeyMonitor.isTrusted {
+            menu.addItem(item("Allow Accessibility (for shortcuts and ⌘⌃⇧4)…", #selector(askAccessibility)))
         }
         menu.addItem(.separator())
-        menu.addItem(item("Edit your words…", #selector(editVocabulary)))
-        menu.addItem(item("Edit replacements…", #selector(editReplacements)))
-        menu.addItem(item("Open settings.json…", #selector(editSettings)))
+        let prefs = item("Settings…", #selector(openSettings))
+        prefs.keyEquivalent = ","
+        menu.addItem(prefs)
         menu.addItem(item("Show screenshots folder", #selector(showShots)))
         menu.addItem(.separator())
         menu.addItem(disabled(speechStatus))
@@ -463,13 +491,15 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleSubmit() {
-        settings.submitOnSecondPress.toggle()
-        storage.save(settings)
+        var s = settings
+        s.submitOnSecondPress.toggle()
+        apply(s)
     }
 
     @objc private func toggleHide() {
-        settings.hideDuringScreenshots.toggle()
-        storage.save(settings)
+        var s = settings
+        s.hideDuringScreenshots.toggle()
+        apply(s)
         if settings.hideDuringScreenshots, !ScreenshotKeyMonitor.isTrusted { ScreenshotKeyMonitor.askForPermission() }
     }
 
@@ -477,11 +507,12 @@ final class AppController: NSObject, NSMenuDelegate {
         ScreenshotKeyMonitor.askForPermission()
         watchForTrust()
     }
-    @objc private func editVocabulary() { NSWorkspace.shared.open(storage.vocabularyURL) }
-    @objc private func editReplacements() { NSWorkspace.shared.open(storage.replacementsURL) }
-    @objc private func editSettings() {
-        storage.save(settings)
-        NSWorkspace.shared.open(storage.settingsURL)
+    @objc private func openSettings() {
+        settingsWindow.show(
+            settings: settings,
+            onChange: { [weak self] new in self?.apply(new) },
+            onRecording: { [weak self] recording in self?.pauseShortcuts(recording) },
+            onAskAccessibility: { [weak self] in self?.askAccessibility() })
     }
     @objc private func showShots() { NSWorkspace.shared.open(storage.shotsURL) }
     @objc private func quit() { NSApp.terminate(nil) }
