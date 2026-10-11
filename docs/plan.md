@@ -18,7 +18,7 @@ Updated 10 Oct 2026. Spec: [spec.md](spec.md).
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Pin + paste: herdr client, session picker, ordered outbox, text + images into the pinned pane | ✓ done, verified end to end |
-| 2 | Show: clipboard screenshots → numbered PNGs → markers; bar hides on ⌘⇧3/4/5, excluded from capture | ✓ done; clipboard path verified in the app, key-hiding needs Accessibility on first run |
+| 2 | Show: clipboard screenshots → numbered PNGs → markers; bar hides on ⌘⌃⇧3/4, excluded from capture | ✓ done; clipboard path verified in the app, key-hiding needs Accessibility on first run |
 | 3 | Tell: FluidAudio streaming in the bar, placement by lag-adjusted transcript, editing while recording | ✓ done; speech verified on a file, live microphone needs the first real run |
 | 4 | Your words: user list, repo `.github/dictation.md`, replacements | ✓ done |
 

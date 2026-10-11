@@ -34,6 +34,6 @@ Note: with Command Line Tools only, `swift test` sometimes fails once with "plug
 
 - **Microphone permission** and a real dictation (the live AVAudioEngine path; the same recogniser
   path was tested with a file).
-- **Accessibility permission** so the bar hides on ⌘⇧3/4/5. Without it, the bar is still excluded
+- **Accessibility permission** so the bar hides on ⌘⌃⇧3/4. Without it, the bar is still excluded
   from captures.
 - Picking a session from the menu (tested only by writing `settings.json`).
