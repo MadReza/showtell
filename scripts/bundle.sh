@@ -14,6 +14,7 @@ app=build/Showtell.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/Showtell" "$app/Contents/MacOS/Showtell"
+cp Resources/AppIcon.icns "$app/Contents/Resources/"
 for b in "$bin"/*.bundle; do
   [ -e "$b" ] && cp -R "$b" "$app/Contents/Resources/"
 done
@@ -28,6 +29,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>Showtell</string>
   <key>CFBundleExecutable</key><string>Showtell</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -38,7 +40,6 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature with a stable identifier, so permission grants survive rebuilds as far as macOS allows.
 # A stable identity keeps macOS permissions (Accessibility, Microphone) across rebuilds; ad-hoc
 # signatures change with every build. Create one with scripts/make-signing-cert.sh.
 identity=$(security find-identity -p codesigning 2>/dev/null | awk -F'"' '/"Showtell Local Signing"/ {print $2; exit}')

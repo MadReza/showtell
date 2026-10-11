@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ServiceManagement
 import ShowtellCore
 import SwiftUI
 
@@ -72,6 +73,8 @@ final class SettingsModel: ObservableObject {
     }
     @Published var accessibilityAllowed = ScreenshotKeyMonitor.isTrusted
     @Published var microphone = SettingsModel.microphoneStatus()
+    @Published var openAtLogin = SMAppService.mainApp.status == .enabled
+    @Published var loginError: String?
     /// Which shortcut is listening for keys, if any.
     @Published var recording: WritableKeyPath<ShowtellCore.Settings, Shortcut>? {
         didSet { onRecording?(recording != nil) }
@@ -89,7 +92,21 @@ final class SettingsModel: ObservableObject {
         replacements = (try? String(contentsOf: storage.replacementsURL, encoding: .utf8)) ?? ""
     }
 
+    func setOpenAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            loginError = nil
+        } catch {
+            loginError = error.localizedDescription
+        }
+        openAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    /// Login items remember the app's path, so this copy should be the installed one.
+    var isInstalled: Bool { Bundle.main.bundlePath.hasPrefix("/Applications/") }
+
     func refresh() {
+        if SMAppService.mainApp.status == .enabled { openAtLogin = true }
         accessibilityAllowed = ScreenshotKeyMonitor.isTrusted
         microphone = Self.microphoneStatus()
     }
@@ -121,6 +138,13 @@ struct SettingsView: View {
             Section("Behaviour") {
                 Toggle("Second press sends (presses Enter)", isOn: $model.settings.submitOnSecondPress)
                 Toggle("Hide the bar while taking a screenshot (⌘⌃⇧3 / ⌘⌃⇧4)", isOn: $model.settings.hideDuringScreenshots)
+                Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
+                if let error = model.loginError {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                } else if !model.isInstalled {
+                    Text("This copy runs from \(Bundle.main.bundlePath). Install it with scripts/install.sh so login opens the right one.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Permissions") {
                 LabeledContent("Microphone") { Text(model.microphone).foregroundStyle(.secondary) }
