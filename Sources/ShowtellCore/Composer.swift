@@ -4,8 +4,10 @@ import Foundation
 /// word you were saying, and any edits you make in the overlay.
 ///
 /// The recogniser lags about 2 s and may rewrite recent words, so placement is
-/// recomputed on every update from word timings, until you edit. Your edits freeze
-/// everything shown at that moment; newer speech continues after it.
+/// recomputed on every update until you edit. A screenshot goes after the words the
+/// transcript held one lag after the shot (or after the words timed before it, when the
+/// recogniser reports word timings). Your edits freeze everything shown at that moment;
+/// newer speech continues after it.
 public struct Composer: Sendable {
     public struct Shot: Sendable {
         public let number: Int
@@ -18,13 +20,19 @@ public struct Composer: Sendable {
     }
 
     public private(set) var shots: [Shot] = []
+    /// How far the transcript trails the audio (Parakeet Unified streaming: 2.08 s).
+    public var lag: Double
     private var engineText = ""
     private var wordEnds: [Double] = []
+    /// (seconds of audio, words in the transcript) at each update.
+    private var history: [(time: Double, words: Int)] = []
     private var frozenText = ""
     private var frozenEngineWords = 0
     private var nextNumber = 1
 
-    public init() {}
+    public init(lag: Double = 2.1) {
+        self.lag = lag
+    }
 
     public var shotURLs: [Int: URL] {
         Dictionary(uniqueKeysWithValues: shots.map { ($0.number, $0.url) })
@@ -32,10 +40,16 @@ public struct Composer: Sendable {
 
     public var isEmpty: Bool { render().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    /// Latest full transcript from the recogniser plus any newly timed words.
-    public mutating func updateTranscript(_ text: String, newWordEndTimes: [Double] = []) {
+    /// Latest full transcript from the recogniser, the audio time it covers, and any newly timed words.
+    public mutating func updateTranscript(_ text: String, newWordEndTimes: [Double] = [], at time: Double? = nil) {
         engineText = text
         wordEnds += newWordEndTimes
+        if let time { history.append((time, engineWords.count)) }
+    }
+
+    /// Mark the transcript final: every shot whose lag window is still open goes by the final text.
+    public mutating func finish(at time: Double) {
+        history.append((max(time, (history.last?.time ?? 0)) + lag + 1, engineWords.count))
     }
 
     /// Records a screenshot taken `time` seconds into the recording. Returns its marker number.
@@ -60,7 +74,8 @@ public struct Composer: Sendable {
         var slots: [Int: [Int]] = [:]  // word index in `live` -> shot numbers placed before it
         for shot in shots where !shot.frozen {
             let timed = wordEnds.filter { $0 <= shot.time }.count
-            let index = max(timed, shot.wordsAtShot) - frozenEngineWords
+            let caughtUp = history.first(where: { $0.time >= shot.time + lag })?.words ?? 0
+            let index = max(timed, shot.wordsAtShot, caughtUp) - frozenEngineWords
             slots[min(max(index, 0), live.count), default: []].append(shot.number)
         }
         var tokens: [String] = []

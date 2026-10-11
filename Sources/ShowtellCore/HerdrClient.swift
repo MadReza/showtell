@@ -102,6 +102,18 @@ public struct HerdrClient: HerdrTransport {
         return try JSONDecoder().decode(Result.self, from: data).agents
     }
 
+    /// Synchronous variant for menus, which must be built on the spot. herdr answers in milliseconds.
+    public func listAgentsNow() throws -> [HerdrAgent] {
+        struct Result: Decodable { let agents: [HerdrAgent] }
+        let request: [String: Any] = ["id": "showtell-menu", "method": "agent.list", "params": [String: Any]()]
+        let line = try JSONSerialization.data(withJSONObject: request) + Data([0x0a])
+        let reply = try UnixSocket.exchange(path: socketPath, payload: line, timeout: 1)
+        struct Envelope: Decodable { let result: Result?; let error: [String: String]? }
+        let env = try JSONDecoder().decode(Envelope.self, from: reply)
+        if let e = env.error { throw HerdrError(code: e["code"] ?? "error", message: e["message"] ?? "") }
+        return env.result?.agents ?? []
+    }
+
     public func paste(_ text: String, pane: String) async throws {
         // herdr wraps text-only send_input in ESC[200~ … ESC[201~ when the app enabled
         // bracketed paste. A stray end marker inside would end the paste early.
