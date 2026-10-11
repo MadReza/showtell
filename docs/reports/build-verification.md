@@ -67,3 +67,18 @@ Claude Code all come out right.
 
 Lesson from the cursor test: the paste goes to whichever app is in front. In one run TextEdit
 didn't come forward and the paste landed in iTerm2, so scripted tests now check the front app first.
+
+## Tidy up text, 11 Oct 2026
+
+Two dictations run through each model with `Showtell --tidy` (second run, model loaded):
+
+| Model | "so um the login button is cut off on mobile [📷 1] while the herdr looks fine the error says four zero four question is this CSS a problem" | Time |
+|---|---|---|
+| Apple Intelligence | The login button is cut off on mobile [📷 1] while the herdr looks fine. The error says 404. Is this CSS a problem? | 0.7 s |
+| Qwen 2.5 1.5B | The login button is cut off on mobile [📷 1]. The herdr looks fine. The error says 404. Is this a CSS problem? | 0.4 s |
+| Qwen 3 4B | The login button is cut off on mobile [📷 1], while the herdr looks fine. The error says 404. Is this a CSS problem? | 1.1 s |
+
+Rejected along the way: Gemma 3 1B and Qwen 3 1.7B (changed almost nothing). Small models dropped
+`[📷 n]` markers until they were shown as `[Screenshot n]` and given one worked example; when a
+marker still goes missing, the text between screenshots is tidied piece by piece. The app flow
+(record → ⌃⌥C tidy → review → send) was run once into a throwaway tmux Claude session.

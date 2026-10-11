@@ -5,7 +5,8 @@ import ShowtellCore
 /// Ties the parts together: hotkey → bar + speech + clipboard screenshots → outbox → herdr pane.
 @MainActor
 final class AppController: NSObject, NSMenuDelegate {
-    enum State { case idle, recording, finishing }
+    /// reviewing: listening stopped and the text tidied, waiting for you to send it.
+    enum State { case idle, recording, finishing, reviewing }
 
     private let storage = Storage()
     private var settings: Settings
@@ -19,6 +20,11 @@ final class AppController: NSObject, NSMenuDelegate {
     private let screenshotKeys = ScreenshotKeyMonitor()
     private var startBinding: ShortcutBinding?
     private var cancelBinding: ShortcutBinding?
+    private var cleanupBinding: ShortcutBinding?
+    private(set) lazy var cleaner = TextCleaner(storage: storage)
+    /// The text before and after the last clean-up, so the shortcut can switch between them.
+    private var beforeCleanup: String?
+    private var afterCleanup: String?
     private lazy var settingsWindow = SettingsWindow(storage: storage)
     private var trustTimer: Timer?
     private let panel = OverlayPanel()
@@ -75,6 +81,9 @@ final class AppController: NSObject, NSMenuDelegate {
         center.addObserver(forName: .init("dev.showtell.cancel"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancelRecording() }
         }
+        center.addObserver(forName: .init("dev.showtell.tidy"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cleanupPressed() }
+        }
         center.addObserver(forName: .init("dev.showtell.settings"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.openSettings() }
         }
@@ -89,6 +98,10 @@ final class AppController: NSObject, NSMenuDelegate {
                     self?.pick(mi)
                 }
             }
+        }
+
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shutdown() }
         }
 
         Task { await speech.load() }
@@ -108,6 +121,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 timer.invalidate()
                 self.startBinding?.refresh()
                 self.cancelBinding?.refresh()
+                self.cleanupBinding?.refresh()
                 self.settingsWindow.refresh()
                 if self.state == .recording, self.settings.hideDuringScreenshots { self.screenshotKeys.start() }
                 self.flash(.info("Accessibility allowed · \(self.hotKeyLabel) to start talking"), for: 2.5)
@@ -120,7 +134,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private var hotKeyLabel: String { settings.startShortcut.label }
     private var needsAccessibility: Bool {
         settings.startShortcut.tap != nil || settings.cancelShortcut.tap != nil || settings.hideDuringScreenshots
-            || settings.insertAtCursor
+            || settings.insertAtCursor || (cleanupChoice != nil && settings.cleanupShortcut.tap != nil)
     }
 
     private func registerMainHotKey() {
@@ -137,7 +151,9 @@ final class AppController: NSObject, NSMenuDelegate {
         settings.insertAtCursor = old.insertAtCursor
         storage.save(settings)
         if new.startShortcut != old.startShortcut { registerMainHotKey() }
-        if new.cancelShortcut != old.cancelShortcut, state == .recording { bindCancel() }
+        if new.cancelShortcut != old.cancelShortcut, state == .recording || state == .reviewing { bindCancel() }
+        if state == .recording || state == .reviewing { bindCleanup() }
+        if new.cleanupModel != old.cleanupModel, let model = cleanupChoice { cleaner.prepare(model) }
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted { watchForTrust() }
     }
 
@@ -146,9 +162,13 @@ final class AppController: NSObject, NSMenuDelegate {
         if paused {
             startBinding?.stop()
             cancelBinding?.stop()
+            cleanupBinding?.stop()
         } else {
             registerMainHotKey()
-            if state == .recording { bindCancel() }
+            if state == .recording || state == .reviewing {
+                bindCancel()
+                bindCleanup()
+            }
         }
     }
 
@@ -159,10 +179,24 @@ final class AppController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// The clean-up shortcut, listened for only while recording or reviewing.
+    private func bindCleanup() {
+        cleanupBinding?.stop()
+        cleanupBinding = nil
+        guard cleanupChoice != nil else { return }
+        cleanupBinding = ShortcutBinding(settings.cleanupShortcut, hotKeys: hotKeys) { [weak self] in
+            self?.cleanupPressed()
+        }
+    }
+
+    /// The model picked in Settings, if any.
+    private var cleanupChoice: CleanupModel? { CleanupModel.named(settings.cleanupModel) }
+
     func toggle() {
         switch state {
         case .idle: startRecording()
         case .recording: Task { await finishAndSend() }
+        case .reviewing: Task { await deliver() }
         case .finishing: break
         }
     }
@@ -178,6 +212,8 @@ final class AppController: NSObject, NSMenuDelegate {
         state = .recording
         generation += 1
         composer = Composer()
+        beforeCleanup = nil
+        afterCleanup = nil
         recordingID = Self.stamp()
         recordingStart = Date()
         model.targetName = targetLabel
@@ -189,6 +225,8 @@ final class AppController: NSObject, NSMenuDelegate {
         panel.present()
 
         bindCancel()
+        bindCleanup()
+        if let model = cleanupChoice { cleaner.prepare(model) }
         clipboard.start()
         if settings.hideDuringScreenshots { screenshotKeys.start() }
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -271,8 +309,9 @@ final class AppController: NSObject, NSMenuDelegate {
         if state == .recording, cancelBinding == nil { bindCancel() }
     }
 
-    private func finishAndSend() async {
-        guard state == .recording else { return }
+    /// Stops listening and puts the final transcript in the bar. False if the recording was
+    /// cancelled meanwhile.
+    private func finishListening() async -> Bool {
         state = .finishing
         stopCapture()
         let gen = generation
@@ -287,6 +326,100 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         speechStart = nil
         speechListening = false
+        return gen == generation
+    }
+
+    private func finishAndSend() async {
+        guard state == .recording else { return }
+        guard await finishListening() else { return }
+        if settings.cleanupOnSend, cleanupChoice != nil {
+            let gen = generation
+            if let problem = await cleanUp() {
+                guard gen == generation else { return }
+                // Don't send something you haven't seen: show your text and let you decide.
+                review(note: "Kept your text (\(problem))")
+                return
+            }
+            guard gen == generation else { return }
+        }
+        await deliver()
+    }
+
+    /// The clean-up shortcut: while recording, stop listening and show the tidied text to check;
+    /// while reviewing, switch between your text and the tidied one.
+    private func cleanupPressed() {
+        switch state {
+        case .recording:
+            Task {
+                guard await finishListening() else { return }
+                let gen = generation
+                let problem = await cleanUp()
+                guard gen == generation else { return }
+                review(note: problem.map { "Kept your text (\($0))" })
+            }
+        case .reviewing:
+            if let after = afterCleanup, let before = beforeCleanup, model.text == after {
+                setText(before)
+                review(note: "Your original text")
+            } else {
+                state = .finishing
+                Task {
+                    let gen = generation
+                    let problem = await cleanUp()
+                    guard gen == generation else { return }
+                    review(note: problem.map { "Kept your text (\($0))" })
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    /// Tidies the text in the bar with the model picked in Settings. Returns why not, if it couldn't.
+    private func cleanUp() async -> String? {
+        guard let choice = cleanupChoice else { return "no model picked in Settings" }
+        let terms = storage.vocabulary(forRepoAt: repoPath).map(\.text)
+        let rules = storage.replacementRules() + terms.map { ($0, $0) }
+        let original = Vocabulary.applyReplacements(composer.render(), rules)
+        model.phase = .info("Tidying up with \(choice.name)…")
+        let gen = generation
+        let result = await cleaner.clean(original, terms: terms, with: choice)
+        guard gen == generation else { return "cancelled" }
+        switch result {
+        case .success(let cleaned):
+            beforeCleanup = original
+            afterCleanup = cleaned
+            setText(cleaned)
+            return nil
+        case .failure(let failure):
+            return failure.description
+        }
+    }
+
+    private func setText(_ text: String) {
+        composer.userEdited(text)
+        model.text = text
+    }
+
+    /// Listening has stopped; the bar waits for you to check the text and send it.
+    private func review(note: String?) {
+        state = .reviewing
+        model.phase = .info(note ?? "Tidied · check it, then send")
+        let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
+        var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel"]
+        if afterCleanup != nil { parts.append("\(settings.cleanupShortcut.label) switches to \(model.text == afterCleanup ? "your original" : "the tidied text")") }
+        model.hint = parts.joined(separator: "  ·  ")
+        if cancelBinding == nil { bindCancel() }
+        if cleanupBinding == nil { bindCleanup() }
+    }
+
+    /// Sends what the bar shows to the open session, or inserts it at the cursor.
+    private func deliver() async {
+        guard state == .finishing || state == .reviewing else { return }
+        cancelBinding?.stop()
+        cancelBinding = nil
+        cleanupBinding?.stop()
+        cleanupBinding = nil
         // Replacements, then each of your terms in the case you wrote it ("Herdr" → "herdr").
         let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: repoPath).map { ($0.text, $0.text) }
         let pieces = composer.pieces().map { piece -> Piece in
@@ -346,7 +479,7 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func cancelRecording() {
-        guard state == .recording else { return }
+        guard state == .recording || state == .reviewing else { return }
         stopCapture()
         state = .idle
         generation += 1
@@ -367,6 +500,8 @@ final class AppController: NSObject, NSMenuDelegate {
         reappearWork?.cancel()
         cancelBinding?.stop()
         cancelBinding = nil
+        cleanupBinding?.stop()
+        cleanupBinding = nil
         panel.reappear()
     }
 
@@ -388,6 +523,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private func refreshHint() {
         let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel", "⌘⌃⇧4 adds a screenshot"]
+        if cleanupChoice != nil { parts.insert("\(settings.cleanupShortcut.label) to tidy up", at: 2) }
         switch speechState {
         case .loading(let s): parts.insert(s, at: 0)
         case .failed(let s): parts.insert(s + " (type instead)", at: 0)
@@ -443,7 +579,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let action = state == .recording ? "Send" : "Start talking"
+        let action = state == .recording || state == .reviewing ? "Send" : "Start talking"
         menu.addItem(item("\(action)   \(hotKeyLabel)", #selector(menuToggle)))
         menu.addItem(.separator())
         menu.addItem(header("Open a session"))
@@ -584,8 +720,12 @@ final class AppController: NSObject, NSMenuDelegate {
             settings: settings,
             onChange: { [weak self] new in self?.apply(new) },
             onRecording: { [weak self] recording in self?.pauseShortcuts(recording) },
+            cleaner: cleaner,
             onAskAccessibility: { [weak self] in self?.askAccessibility() })
     }
     @objc private func showShots() { NSWorkspace.shared.open(storage.shotsURL) }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    /// llama.cpp must let go of a loaded model before the process exits.
+    func shutdown() { cleaner.shutdownBlocking() }
 }

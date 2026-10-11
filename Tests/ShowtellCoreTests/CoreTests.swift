@@ -270,3 +270,51 @@ final class EventLog: @unchecked Sendable {
     func add(_ e: DeliveryEvent) { lock.lock(); events.append(e); lock.unlock() }
     var all: [DeliveryEvent] { lock.lock(); defer { lock.unlock() }; return events }
 }
+
+@Suite struct CleanupTests {
+    let original = "so um the button is cut off [📷 1] while herdr looks fine [📷 2] question is this CSS"
+
+    @Test func acceptsATidiedMessage() {
+        let tidied = "The button is cut off [Screenshot 1] while herdr looks fine [Screenshot 2]. Is this CSS?"
+        #expect(Cleanup.accept(original: original, cleaned: tidied, terms: ["herdr"])
+            == "The button is cut off [📷 1] while herdr looks fine [📷 2]. Is this CSS?")
+    }
+
+    @Test func refusesLostOrMovedScreenshots() {
+        #expect(Cleanup.accept(original: original, cleaned: "The button is cut off while herdr looks fine [📷 2].", terms: []) == nil)
+        #expect(Cleanup.accept(original: original, cleaned: "[📷 2] The button is cut off [📷 1] while herdr looks fine.", terms: []) == nil)
+    }
+
+    @Test func refusesLostTermsAndBigChanges() {
+        #expect(Cleanup.accept(original: original, cleaned: "The button is cut off [📷 1] while it looks fine [📷 2]. Is this CSS?", terms: ["herdr"]) == nil)
+        #expect(Cleanup.accept(original: original, cleaned: "Bug [📷 1] [📷 2]", terms: []) == nil)
+    }
+
+    @Test func stripsPreambleAndQuotes() {
+        #expect(Cleanup.accept(original: "hello there my friend how are you", cleaned: "Here is the tidied text: \"Hello there, my friend. How are you?\"", terms: [])
+            == "Hello there, my friend. How are you?")
+    }
+
+    @Test func modelTextRoundTrip() {
+        #expect(Cleanup.modelText("a [📷 1] b [📷 12]") == "a [Screenshot 1] b [Screenshot 12]")
+        #expect(Cleanup.fromModelText("a [screenshot 1] b") == "a [📷 1] b")
+    }
+
+    @Test func splitAndJoinKeepScreenshotsInPlace() {
+        #expect(Cleanup.split("open the page [📷 1] it fails") == ["open the page", "[📷 1]", "it fails"])
+        #expect(Cleanup.join(["Open the page", "[📷 1]", "It fails."]) == "Open the page [📷 1] it fails.")
+        #expect(Cleanup.join(["Open the page.", "[📷 1]", "It fails."]) == "Open the page. [📷 1] It fails.")
+        #expect(Cleanup.join(["Look at this", "[📷 1]", "I think it fails."]) == "Look at this [📷 1] I think it fails.")
+        #expect(Cleanup.join(["Look at this", "[📷 1]", "CSS is wrong."]) == "Look at this [📷 1] CSS is wrong.")
+    }
+
+    @Test func settingsKeepCleanupChoices() throws {
+        var s = Settings()
+        s.cleanupModel = "qwen3-4b"
+        s.cleanupOnSend = true
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s)
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.cleanupModel == nil && old.cleanupOnSend == false && old.cleanupShortcut.label == "⌃⌥C")
+    }
+}

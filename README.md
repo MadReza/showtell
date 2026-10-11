@@ -28,6 +28,27 @@ terms boosted.
 
 **⌃⌥⌫** cancels a recording.
 
+### Tidy up text (optional)
+
+Pick a model in Settings → **Tidy up text** and Showtell can fix punctuation, filler words ("um",
+"you know"), numbers ("four zero four" → 404) and misheard words, keeping your own words:
+
+- Press **⌃⌥C** while talking: listening stops and the tidied text appears in the bar. Press it
+  again to see your original, edit if you like, then tap **left ⌥** to send.
+- Or switch on **Tidy every message when I send it**.
+- If a screenshot marker or one of your words goes missing, your original is kept and shown to
+  you before anything is sent.
+
+| Model | Download | Good | Less good |
+|---|---|---|---|
+| Apple Intelligence | none | no download, under a second | needs Apple Intelligence on (macOS 26) |
+| Qwen 2.5 1.5B | 1.1 GB | fastest download and replies | rewords more freely, sometimes shortens |
+| Qwen 3 4B Instruct | 2.5 GB | stays closest to your words while fixing the most | about 3 GB of memory while loaded, 1–2 s |
+
+Picking a downloadable model downloads it (to `~/Library/Application Support/Showtell/models/`).
+Everything runs on your Mac: Apple's on-device model, or llama.cpp inside Showtell. A loaded model
+is freed after five minutes without use.
+
 ## Settings
 
 Menu → **Settings…** (⌘,):
@@ -43,9 +64,10 @@ Menu → **Settings…** (⌘,):
   session's repository can add terms in `.github/dictation.md` (inline code and the first words
   of list items, the same file VS Code and localvoxtral read).
 - **Replacements.** `wrong => right` lines applied to the finished text.
+- **Tidy up text.** The model, whether every message is tidied, and the tidy-up shortcut.
 
 Files live in `~/Library/Application Support/Showtell/`: `settings.json`, `vocabulary.txt`,
-`replacements.txt`, `shots/`, `last-message.txt`, and `unsent-*.txt` for any message that could
+`replacements.txt`, `shots/`, `models/`, `last-message.txt`, and `unsent-*.txt` for any message that could
 not be delivered.
 
 ## Permissions
@@ -80,9 +102,10 @@ Debug tools:
 ```sh
 swift run showtell-cli sessions                                   # Claude sessions in herdr
 swift run showtell-cli send <pane-id> --submit "look" @/tmp/a.png # deliver like the app does
-swift run showtell-cli toggle | cancel | settings                 # drive the running app
+swift run showtell-cli toggle | cancel | tidy | settings          # drive the running app
 swift run showtell-cli target cursor | <pane-id>                  # change where it sends
 .build/release/Showtell --transcribe speech.wav herdr Showtell    # speech self-test on a file
+.build/release/Showtell --tidy apple "so um the build fails" herdr # tidy-up self-test (apple, qwen2.5-1.5b, qwen3-4b)
 ```
 
 ## How delivery works

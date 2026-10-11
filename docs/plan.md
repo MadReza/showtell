@@ -16,6 +16,7 @@ Updated 11 Oct 2026. Spec: [spec.md](spec.md).
 | 11 Oct | Stricter word boost, no seeded aliases | Live tests: aliases turned "how well" into Showtell |
 | 11 Oct | Insert at the cursor as a destination | User's request |
 | 11 Oct | Sign with a local self-signed identity | Ad-hoc signatures lost permissions on every rebuild |
+| 11 Oct | Optional tidy-up model: Apple Intelligence, Qwen 2.5 1.5B or Qwen 3 4B (llama.cpp), picked in Settings | User's request: better sentences, not a rewrite; the user chooses, with pros and cons shown |
 
 ## Milestones
 
