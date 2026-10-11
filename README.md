@@ -117,3 +117,7 @@ clipboard is put back afterwards.
 - Reports: [delivery tests](docs/reports/delivery-tests.md), [study of existing tools](docs/reports/study.md),
   [build verification and live tests](docs/reports/build-verification.md)
 - Illustrated research: open [docs/research/index.html](docs/research/index.html) in a browser
+
+## License
+
+MIT. See [LICENSE](LICENSE).
