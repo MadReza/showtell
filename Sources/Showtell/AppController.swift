@@ -11,7 +11,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private var settings: Settings
     private let herdr = HerdrClient()
     private lazy var outbox = Outbox(transport: herdr)
-    private let speech = SpeechEngine()
+    private var speech: SpeechEngine!
+    private var speechState = SpeechEngine.State.notLoaded
     private let hotKeys = HotKeys()
     private let clipboard = ClipboardWatcher()
     private let screenshotKeys = ScreenshotKeyMonitor()
@@ -22,7 +23,11 @@ final class AppController: NSObject, NSMenuDelegate {
     private var composer = Composer()
     private var recordingID = ""
     private var recordingStart = Date()
-    private var speechRunning = false
+    /// Bumped on every recording, so late updates from an older one are ignored.
+    private var generation = 0
+    private var speechStart: Task<Bool, Never>?
+    private var speechListening = false
+    private var pendingSends = 0
     private var cancelKey: UInt32?
     private var ticker: Timer?
     private var reappearWork: DispatchWorkItem?
@@ -34,6 +39,13 @@ final class AppController: NSObject, NSMenuDelegate {
         try? storage.prepare()
         settings = storage.loadSettings()
         super.init()
+        speech = SpeechEngine { [weak self] state in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.speechState = state
+                if self.state == .recording { self.refreshHint() }
+            }
+        }
     }
 
     func start() {
@@ -49,7 +61,6 @@ final class AppController: NSObject, NSMenuDelegate {
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
         screenshotKeys.onEscape = { [weak self] in self?.panel.reappear() }
-        speech.onState = { [weak self] _ in self?.refreshHint() }
 
         // Lets scripts and other tools drive Showtell: `showtell-cli toggle` / `showtell-cli cancel`.
         let center = DistributedNotificationCenter.default()
@@ -94,6 +105,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         hideWork?.cancel()
         state = .recording
+        generation += 1
         composer = Composer()
         recordingID = Self.stamp()
         recordingStart = Date()
@@ -114,31 +126,39 @@ final class AppController: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated { self?.model.elapsed = Date().timeIntervalSince(self?.recordingStart ?? Date()) }
         }
 
-        if speech.state == .ready {
+        speechListening = false
+        speechStart = nil
+        if speechState == .ready {
             let terms = storage.vocabulary(forRepoAt: target.cwd)
-            speechRunning = true
-            Task {
+            let gen = generation
+            let speech = speech!
+            speechStart = Task { [weak self] in
+                guard let self else { return false }
                 do {
                     try await speech.start(terms: terms) { [weak self] text, ends, time in
-                        DispatchQueue.main.async { self?.transcriptUpdated(text, ends, time) }
+                        DispatchQueue.main.async { self?.transcriptUpdated(text, ends, time, generation: gen) }
                     }
+                    if gen == generation { speechListening = true }
+                    return true
                 } catch {
-                    speechRunning = false
-                    model.phase = .error("Microphone unavailable: \(error.localizedDescription)")
+                    if gen == generation, state == .recording {
+                        model.phase = .error("Microphone unavailable: \(error.localizedDescription). You can still type.")
+                    }
+                    return false
                 }
             }
         }
         checkTargetStillThere(target)
     }
 
-    private func transcriptUpdated(_ text: String, _ ends: [Double], _ time: Double) {
-        guard state == .recording else { return }
+    private func transcriptUpdated(_ text: String, _ ends: [Double], _ time: Double, generation gen: Int) {
+        guard gen == generation, state != .idle else { return }
         composer.updateTranscript(text, newWordEndTimes: ends, at: time)
         model.text = composer.render()
     }
 
     private func userEdited(_ text: String) {
-        guard state == .recording else { return }
+        guard state != .idle else { return }
         composer.userEdited(text)
         model.text = text
     }
@@ -146,7 +166,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private func screenshotArrived(_ png: Data) {
         guard state == .recording else { return }
         reappearWork?.cancel()
-        let time = speechRunning ? speech.elapsed : Date().timeIntervalSince(recordingStart)
+        // The speech clock restarts when the microphone starts; until then use wall time.
+        let time = speechListening ? speech.captured : Date().timeIntervalSince(recordingStart)
         let number = composer.shots.count + 1
         let url = storage.newShotURL(recording: recordingID, number: number)
         do { try png.write(to: url) } catch {
@@ -159,6 +180,8 @@ final class AppController: NSObject, NSMenuDelegate {
         panel.reappear()
     }
 
+    /// ⌘⌃⇧3/4 copy to the clipboard: hide until the shot arrives. The file variants (no ⌃) need no
+    /// hiding: the bar is excluded from captures and nothing would bring it back.
     private func screenshotKeysPressed() {
         guard state == .recording else { return }
         panel.vanish()
@@ -171,38 +194,51 @@ final class AppController: NSObject, NSMenuDelegate {
         guard state == .recording, let target = settings.pinned else { return }
         state = .finishing
         stopCapture()
-        if speechRunning {
+        let gen = generation
+        if let speechStart, await speechStart.value {
             model.phase = .info("Finishing…")
             let final = await speech.stop()
-            speechRunning = false
-            composer.updateTranscript(final.text, newWordEndTimes: final.wordEnds, at: final.time)
-            composer.finish(at: final.time)
-            model.text = composer.render()
+            if gen == generation {
+                composer.updateTranscript(final.text, newWordEndTimes: final.wordEnds, at: final.time)
+                composer.finish(at: final.time)
+                model.text = composer.render()
+            }
         }
+        speechStart = nil
+        speechListening = false
         let rules = storage.replacementRules()
         let pieces = composer.pieces().map { piece -> Piece in
             if case .text(let s) = piece { return .text(Vocabulary.applyReplacements(s, rules)) }
             return piece
         }
+        let rendered = composer.render()
+        let id = recordingID
         state = .idle  // you can start the next message while this one is delivered
         guard !pieces.isEmpty else { panel.dismiss(); return }
-        saveLastMessage(composer.render())
+        saveLastMessage(rendered)
 
         model.phase = .sending
+        pendingSends += 1
         await outbox.setEventHandler { [weak self] event in
             DispatchQueue.main.async { self?.deliveryEvent(event) }
         }
         let result = await outbox.enqueue(pieces, to: target, submit: settings.submitOnSecondPress)
+        pendingSends -= 1
         switch result {
         case .success(let found):
             if found != settings.pinned, settings.pinned?.sessionID == found.sessionID {
                 settings.pinned = found
                 storage.save(settings)
             }
-            if state == .idle { flash(.sent, for: 1.2) }
+            if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
         case .failure(let error):
+            let file = storage.root.appendingPathComponent("unsent-\(id).txt")
+            try? rendered.write(to: file, atomically: true, encoding: .utf8)
+            let message = "Not sent: \(error). Saved to \(file.lastPathComponent)"
             if state == .idle {
-                flash(.error("Not sent: \(error). Your text is in last-message.txt"), for: 8)
+                flash(.error(message), for: 8)
+            } else {
+                model.hint = "⚠ Previous message — \(message)"  // don't disturb the recording
             }
         }
     }
@@ -218,8 +254,14 @@ final class AppController: NSObject, NSMenuDelegate {
         guard state == .recording else { return }
         stopCapture()
         state = .idle
-        if speechRunning { Task { await speech.cancel() } }
-        speechRunning = false
+        generation += 1
+        let start = speechStart
+        speechStart = nil
+        speechListening = false
+        if let start {
+            let speech = speech!
+            Task { if await start.value { await speech.cancel() } }
+        }
         panel.dismiss()
     }
 
@@ -251,7 +293,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private func refreshHint() {
         let send = settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(HotKeys.describe(keyCode: 51, modifiers: settings.hotKeyModifiers)) to cancel", "⌘⌃⇧4 adds a screenshot"]
-        switch speech.state {
+        switch speechState {
         case .loading(let s): parts.insert(s, at: 0)
         case .failed(let s): parts.insert(s + " (type instead)", at: 0)
         default: break
@@ -260,16 +302,18 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func flash(_ phase: OverlayModel.Phase, for seconds: Double = 4) {
-        if state == .idle, phase != .sent {
+        guard state == .idle else { return }  // never cover a recording
+        if phase != .sent {
             model.text = ""
             model.shots = []
         }
+        model.hint = ""
         model.phase = phase
         model.targetName = settings.pinned?.name ?? ""
         panel.present()
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.state == .idle else { return }
+            guard let self, self.state == .idle, self.pendingSends == 0 || phase != .sent else { return }
             self.panel.dismiss()
         }
         hideWork = work
@@ -282,7 +326,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private static func stamp() -> String {
         let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd-HHmmss"
+        f.dateFormat = "yyyyMMdd-HHmmss-SSS"
         return f.string(from: Date())
     }
 
@@ -339,7 +383,7 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private var speechStatus: String {
-        switch speech.state {
+        switch speechState {
         case .notLoaded: return "Speech: not loaded"
         case .loading(let s): return "Speech: \(s)"
         case .ready: return "Speech: ready (Parakeet, on this Mac)"
@@ -372,7 +416,11 @@ final class AppController: NSObject, NSMenuDelegate {
         settings.pinned = PinnedTarget(agent: agent)
         storage.save(settings)
         updateStatusTitle()
-        flash(.info("Opened \(agent.displayName) · \(hotKeyLabel) to start talking"), for: 2.5)
+        if state == .idle {
+            flash(.info("Opened \(agent.displayName) · \(hotKeyLabel) to start talking"), for: 2.5)
+        } else {
+            model.targetName = agent.displayName  // this message goes to the new session
+        }
     }
 
     @objc private func toggleSubmit() {

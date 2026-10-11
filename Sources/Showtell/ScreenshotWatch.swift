@@ -32,9 +32,10 @@ final class ClipboardWatcher {
     }
 }
 
-/// Notices the native screenshot shortcuts (⌘⇧3/4/5, with or without ⌃) so the bar can
-/// step out of the way before macOS captures the screen. Needs the Accessibility permission;
-/// without it the bar still never appears in shots because it is excluded from capture.
+/// Notices the native copy-to-clipboard screenshot shortcuts (⌘⌃⇧3/4) so the bar can step out
+/// of the way before macOS captures the screen; it comes back when the image reaches the
+/// clipboard. Needs the Accessibility permission; without it the bar still never appears in
+/// shots because it is excluded from capture.
 final class ScreenshotKeyMonitor {
     private var monitors: [Any] = []
     var onScreenshotKeys: (() -> Void)?
@@ -51,7 +52,7 @@ final class ScreenshotKeyMonitor {
         stop()
         let handler: (NSEvent) -> Void = { [weak self] event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            if flags.contains([.command, .shift]), [20, 21, 23].contains(event.keyCode) {  // 3, 4, 5
+            if flags.contains([.command, .shift, .control]), [20, 21].contains(event.keyCode) {  // 3, 4
                 self?.onScreenshotKeys?()
             } else if event.keyCode == 53 {
                 self?.onEscape?()

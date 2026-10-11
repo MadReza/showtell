@@ -34,9 +34,9 @@ sessions; Showtell's job is to get many inputs into it reliably.
 | Speech | Local, streaming, English. Custom terms boosted. First-run model download is acceptable. |
 | Terms | User list (`term: alias, alias`), the pinned repo's `.github/dictation.md`, and `wrong => right` replacements on the finished text. |
 | Screenshots | Taken with macOS's own shortcuts to the clipboard. Saved as numbered PNGs. Placed at the word being spoken when taken. |
-| Bar | Never steals focus until clicked, never appears in screenshots or recordings, hides on ⌘⇧3/4/5 and reappears when the shot arrives (or after 20 s / Esc). |
+| Bar | Never steals focus until clicked, never appears in screenshots or recordings, hides on ⌘⌃⇧3/4 (copy to clipboard) and reappears when the shot arrives (or after 20 s / Esc). |
 | Delivery | Into the pinned herdr pane without focusing it. Each screenshot arrives as an `[Image #n]` attachment, in order. Works while Claude is busy (Claude Code queues it). Never pastes while Claude shows a dialog: waits instead. |
-| Robustness | The pin follows the Claude session id if the pane moves. If the session is gone, say so and keep the text (`last-message.txt`). |
+| Robustness | The pin follows the Claude session id if the pane moves. If a message can't be delivered, say so and save it (`unsent-<id>.txt`). If one fails halfway, messages already queued behind it are held back rather than pasted onto its leftovers. |
 | Controls | Hotkey and "second press sends" are settings now; fuller customization of the controls later. |
 
 ## Behaviour details
@@ -55,12 +55,13 @@ after it.
 4. Wait 0.35 s, check again for a dialog, then `pane.send_keys ["enter"]`.
 
 **Files** in `~/Library/Application Support/Showtell/`: `settings.json`, `vocabulary.txt`,
-`replacements.txt`, `shots/<recording>-NN.png`, `last-message.txt`.
+`replacements.txt`, `shots/<recording>-NN.png`, `last-message.txt` (the latest message),
+`unsent-<recording>.txt` (messages that could not be delivered).
 
 ## Permissions
 
 - Microphone: asked on the first recording.
-- Accessibility: optional, only to notice ⌘⇧3/4/5 and hide the bar. Without it the bar is still
+- Accessibility: optional, only to notice ⌘⌃⇧3/4 and hide the bar. Without it the bar is still
   excluded from captures (`NSWindow.sharingType = .none`).
 - No Screen Recording permission: screenshots come from the clipboard.
 

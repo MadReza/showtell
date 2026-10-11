@@ -50,6 +50,22 @@ import Testing
         #expect(c.render() == "look at this [📷 1]")
     }
 
+    @Test func editSurvivesRecogniserMergingEarlierWords() {
+        var c = Composer()
+        c.updateTranscript("see you to day at the")
+        c.userEdited("See you today at the")
+        c.updateTranscript("see you today at the office")  // "to day" merged: one word fewer
+        #expect(c.render() == "See you today at the office")
+    }
+
+    @Test func editSurvivesRecogniserSplittingEarlierWords() {
+        var c = Composer()
+        c.updateTranscript("open showtell now")
+        c.userEdited("Open Showtell now")
+        c.updateTranscript("open show tell now please")
+        #expect(c.render() == "Open Showtell now please")
+    }
+
     @Test func shotNeverPlacedBeforeWordsAlreadyShown() {
         var c = Composer()
         c.updateTranscript("one two three")  // no timings at all
@@ -116,7 +132,11 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
         let status = statuses.count > 1 ? statuses.removeFirst() : statuses[0]
         return [HerdrAgent(paneID: paneID, terminalID: "t1", status: status, sessionID: "S1", title: "showtell")]
     }
-    func paste(_ text: String, pane: String) async throws { record("paste \(pane) \(text)") }
+    var failOnPaste: String?
+    func paste(_ text: String, pane: String) async throws {
+        if let f = failOnPaste, text == f { throw HerdrError(code: "test", message: "boom") }
+        record("paste \(pane) \(text)")
+    }
     func pressEnter(pane: String) async throws { record("enter \(pane)") }
     func readVisible(pane: String) async throws -> String { "" }
     private func record(_ s: String) { lock.lock(); calls.append(s); lock.unlock() }
@@ -154,6 +174,24 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
         #expect(Set(pastes) == ["paste w1:p2 one", "paste w1:p2 two"])
         #expect(fake.calls.count == 4)
         #expect(fake.calls[1] == "enter w1:p2" && fake.calls[3] == "enter w1:p2")
+    }
+
+    @Test func messagesQueuedBehindAPartialFailureAreHeldBack() async {
+        let fake = FakeHerdr(statuses: [.idle])
+        fake.failOnPaste = "second half"
+        // Each pause takes 20 ms, so "next message" is queued while the first is still pasting.
+        let outbox = Outbox(transport: fake, sleep: { _ in try? await Task.sleep(nanoseconds: 20_000_000) })
+        async let a = outbox.enqueue([.text("first half"), .text("second half")], to: target, submit: true)
+        try? await Task.sleep(nanoseconds: 5_000_000)
+        async let b = outbox.enqueue([.text("next message")], to: target, submit: true)
+        let (ra, rb) = await (a, b)
+        if case .success = ra { Issue.record("first should fail") }
+        if case .failure(let e) = rb { #expect(e as? DeliveryError == .earlierMessageFailed) } else {
+            Issue.record("second should be held back")
+        }
+        let later = await outbox.enqueue([.text("later")], to: target, submit: false)
+        if case .failure = later { Issue.record("new messages go through again") }
+        #expect(fake.calls == ["paste w1:p2 first half", "paste w1:p2 later"])
     }
 
     @Test func targetGone() async {
