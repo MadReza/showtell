@@ -61,7 +61,7 @@ public enum Cleanup {
         - numbers, versions, times and units written as digits (four zero four → 404, version two point one → version 2.1);
         - words the speech recogniser clearly misheard corrected when the meaning is obvious.
         Keep the speaker's own words, order, tone and meaning. Do not summarise, shorten, explain, answer, or add anything.
-        Markers like [Screenshot 1] stand for pictures: keep every one exactly as written, in the same place in the sentence.
+        Markers like [Screenshot 1] stand for pictures and [Copied 1] for copied text: keep every one exactly as written, in the same place in the sentence.
         If the text is a question or a request, it stays a question or a request for someone else; never reply to it.
         Output only the tidied text, with no quotes and no preamble.
 
@@ -99,16 +99,20 @@ public enum Cleanup {
         return cleaned
     }
 
-    /// Models keep a plain `[Screenshot 1]` more reliably than `[📷 1]`, so they see that form.
+    /// Models keep a plain `[Screenshot 1]` more reliably than `[📷 1]`, so they see that form
+    /// (and `[Copied 1]` for `[📋 1]`).
     public static func modelText(_ text: String) -> String {
-        ShotMarker.regex.stringByReplacingMatches(
-            in: text, range: NSRange(location: 0, length: (text as NSString).length), withTemplate: "[Screenshot $1]")
+        replace(replace(text, #"\[📷 (\d+)\]"#, "[Screenshot $1]"), #"\[📋 (\d+)\]"#, "[Copied $1]")
     }
 
     public static func fromModelText(_ text: String) -> String {
-        let regex = try! NSRegularExpression(pattern: #"\[Screenshot (\d+)\]"#, options: .caseInsensitive)
+        replace(replace(text, #"\[Screenshot (\d+)\]"#, "[📷 $1]"), #"\[Copied (\d+)\]"#, "[📋 $1]")
+    }
+
+    private static func replace(_ text: String, _ pattern: String, _ template: String) -> String {
+        let regex = try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
         return regex.stringByReplacingMatches(
-            in: text, range: NSRange(location: 0, length: (text as NSString).length), withTemplate: "[📷 $1]")
+            in: text, range: NSRange(location: 0, length: (text as NSString).length), withTemplate: template)
     }
 
     static func markers(in text: String) -> [String] {

@@ -19,8 +19,11 @@ terms boosted.
    screen and starts listening.
 3. Talk. Take screenshots with the normal **⌘⌃⇧4** (copy to clipboard). The bar steps out of
    the way while you capture, and each screenshot appears in the text as `[📷 n]` at the word
-   you were saying.
-4. Click into the bar to fix words, or move and delete `[📷 n]` markers. Click the destination
+   you were saying. Copy text anywhere (**⌘C**, or an element with react-grab) and it appears as
+   `[📋 n]` the same way; it is pasted exactly as copied. Untick **Screenshots** or **Copied
+   text** in the bar, or press **⌃⌥I** / **⌃⌥T**, to stop adding them; the choice stays for the
+   next messages. Copies from password managers and Showtell's own pastes are never added.
+4. Click into the bar to fix words, or move and delete `[📷 n]` and `[📋 n]` markers. Click the destination
    name in the bar, or press **⌃⌥↑ / ⌃⌥↓**, to send this message to another session (or the
    cursor). Untick **Send** in the bar, or press **⌃⌥S**, to leave the message in Claude's input
    without pressing Enter. Both choices stay for the next message.
@@ -74,11 +77,13 @@ is freed after five minutes without use.
 
 Menu → **Settings…** (⌘,):
 
-- **Shortcuts.** Start and send, cancel, Send or just paste, next and previous session. Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
+- **Shortcuts.** Start and send, cancel, Send or just paste, next and previous session,
+  Screenshots on or off, Copied text on or off. Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
   single modifier tapped on its own (left ⌥, right ⌘). A plain Esc works for cancelling. Press
   nothing for 2 seconds to keep the old one.
 - **Behaviour.** Whether the second press sends (presses Enter; the same as the bar's Send
-  checkbox), and whether the bar hides on
+  checkbox), whether screenshots and copied text are added while you talk (the bar's Screenshots
+  and Copied text checkboxes), and whether the bar hides on
   ⌘⌃⇧3/4.
 - **Permissions.** Microphone and Accessibility status, with a button to allow.
 - **Your words.** One term per line, spelled the way it should appear. Aliases

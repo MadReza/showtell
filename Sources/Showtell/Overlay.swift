@@ -9,7 +9,15 @@ final class OverlayModel: ObservableObject {
     @Published var phase: Phase = .listening
     @Published var text = ""
     @Published var shots: [(Int, NSImage)] = []
+    /// Text copied while talking, by `[📋 n]` number.
+    @Published var clips: [(Int, String)] = []
     @Published var hint = ""
+    /// The Screenshots and Copied text checkboxes: what the clipboard adds while listening.
+    @Published var captureScreenshots = true
+    @Published var captureText = true
+    @Published var showsCapture = true
+    @Published var screenshotsShortcut = ""
+    @Published var textShortcut = ""
     @Published var elapsed: Double = 0
     /// The Send checkbox: press Enter after pasting, or leave the text in Claude's input.
     @Published var submit = true
@@ -31,6 +39,8 @@ final class OverlayModel: ObservableObject {
     /// Called when the session name is clicked: shows the session list to switch to.
     var onShowSessions: (() -> Void)?
     var onToggleSubmit: (() -> Void)?
+    var onToggleScreenshots: (() -> Void)?
+    var onToggleText: (() -> Void)?
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
@@ -82,8 +92,21 @@ struct OverlayView: View {
             header
             TranscriptEditor(text: model.text, onUserEdit: { model.onUserEdit?($0) })
                 .frame(minHeight: 64, maxHeight: 150)
-            if !model.shots.isEmpty { shotStrip }
-            Text(model.hint).font(.system(size: 11)).foregroundStyle(.secondary)
+            if !model.shots.isEmpty || !model.clips.isEmpty { shotStrip }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(model.hint).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if model.showsCapture {
+                    captureToggle("Screenshots", model.screenshotsShortcut, isOn: model.captureScreenshots,
+                                  help: "Checked: screenshots you copy (⌘⌃⇧4) are added where you were speaking. Changes the default too.") {
+                        model.onToggleScreenshots?()
+                    }
+                    captureToggle("Copied text", model.textShortcut, isOn: model.captureText,
+                                  help: "Checked: text you copy (⌘C) is added where you were speaking. Changes the default too.") {
+                        model.onToggleText?()
+                    }
+                }
+            }
         }
         .padding(14)
         .frame(width: 680)
@@ -147,9 +170,33 @@ struct OverlayView: View {
         }
     }
 
+    private func captureToggle(_ title: String, _ shortcut: String, isOn: Bool, help: String,
+                               toggle: @escaping () -> Void) -> some View {
+        Toggle(isOn: Binding(get: { isOn }, set: { _ in toggle() })) {
+            HStack(spacing: 4) {
+                Text(title).font(.system(size: 11, weight: .medium))
+                Text(shortcut).font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+        }
+        .toggleStyle(.checkbox)
+        .fixedSize()
+        .help(help)
+    }
+
     private var shotStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                ForEach(model.clips, id: \.0) { number, text in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("📋 \(number)").font(.system(size: 10, weight: .bold))
+                        Text(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                            .lineLimit(2).truncationMode(.tail)
+                    }
+                    .padding(5)
+                    .frame(width: 140, height: 52, alignment: .topLeading)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                }
                 ForEach(model.shots, id: \.0) { number, image in
                     ZStack(alignment: .topLeading) {
                         Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
