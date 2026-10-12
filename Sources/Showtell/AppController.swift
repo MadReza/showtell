@@ -1,11 +1,17 @@
 import AppKit
 import Carbon.HIToolbox
+import os
 import ShowtellCore
+
+/// `log stream --predicate 'subsystem == "dev.showtell"'` shows what happened to each message
+/// (states and word counts, never the words).
+let log = Logger(subsystem: "dev.showtell", category: "app")
 
 /// Ties the parts together: hotkey → bar + speech + clipboard screenshots → outbox → herdr pane.
 @MainActor
 final class AppController: NSObject, NSMenuDelegate {
-    enum State { case idle, recording, finishing }
+    /// reviewing: listening stopped and the text tidied, waiting for you to send it.
+    enum State { case idle, recording, finishing, reviewing }
 
     private let storage = Storage()
     private var settings: Settings
@@ -19,6 +25,13 @@ final class AppController: NSObject, NSMenuDelegate {
     private let screenshotKeys = ScreenshotKeyMonitor()
     private var startBinding: ShortcutBinding?
     private var cancelBinding: ShortcutBinding?
+    private var cleanupBinding: ShortcutBinding?
+    /// The Send checkbox and session shortcuts, while recording or reviewing.
+    private var barBindings: [ShortcutBinding] = []
+    private(set) lazy var cleaner = TextCleaner(storage: storage)
+    /// The text before and after the last clean-up, so the shortcut can switch between them.
+    private var beforeCleanup: String?
+    private var afterCleanup: String?
     private lazy var settingsWindow = SettingsWindow(storage: storage)
     private var trustTimer: Timer?
     private let panel = OverlayPanel()
@@ -38,6 +51,13 @@ final class AppController: NSObject, NSMenuDelegate {
     private var hideWork: DispatchWorkItem?
 
     private var model: OverlayModel { panel.model }
+
+    /// A destination said at the start or end of this message; it wins over the open session
+    /// for this message only. A click or ⌃⌥↑↓ dismisses it.
+    private var spokenRoute: Routing.Route?
+    private var routeDismissed = false
+    private var routeAgents: [String: HerdrAgent] = [:]
+    private var routeCandidates: [Routing.Candidate] = []
 
     override init() {
         try? storage.prepare()
@@ -63,6 +83,7 @@ final class AppController: NSObject, NSMenuDelegate {
         registerMainHotKey()
         model.onUserEdit = { [weak self] text in self?.userEdited(text) }
         model.onShowSessions = { [weak self] in self?.showSessionsInBar() }
+        model.onToggleSubmit = { [weak self] in self?.toggleSendInBar() }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
         screenshotKeys.onEscape = { [weak self] in self?.screenshotOver() }
@@ -75,8 +96,20 @@ final class AppController: NSObject, NSMenuDelegate {
         center.addObserver(forName: .init("dev.showtell.cancel"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancelRecording() }
         }
+        center.addObserver(forName: .init("dev.showtell.tidy"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cleanupPressed() }
+        }
         center.addObserver(forName: .init("dev.showtell.settings"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.openSettings() }
+        }
+        center.addObserver(forName: .init("dev.showtell.submit"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.toggleSendInBar() }
+        }
+        center.addObserver(forName: .init("dev.showtell.next"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moveTarget(by: 1) }
+        }
+        center.addObserver(forName: .init("dev.showtell.previous"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moveTarget(by: -1) }
         }
         center.addObserver(forName: .init("dev.showtell.target"), object: nil, queue: .main) { [weak self] note in
             let target = note.object as? String
@@ -89,6 +122,10 @@ final class AppController: NSObject, NSMenuDelegate {
                     self?.pick(mi)
                 }
             }
+        }
+
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shutdown() }
         }
 
         Task { await speech.load() }
@@ -108,6 +145,8 @@ final class AppController: NSObject, NSMenuDelegate {
                 timer.invalidate()
                 self.startBinding?.refresh()
                 self.cancelBinding?.refresh()
+                self.cleanupBinding?.refresh()
+                self.barBindings.forEach { $0.refresh() }
                 self.settingsWindow.refresh()
                 if self.state == .recording, self.settings.hideDuringScreenshots { self.screenshotKeys.start() }
                 self.flash(.info("Accessibility allowed · \(self.hotKeyLabel) to start talking"), for: 2.5)
@@ -120,7 +159,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private var hotKeyLabel: String { settings.startShortcut.label }
     private var needsAccessibility: Bool {
         settings.startShortcut.tap != nil || settings.cancelShortcut.tap != nil || settings.hideDuringScreenshots
-            || settings.insertAtCursor
+            || settings.insertAtCursor || (cleanupChoice != nil && settings.cleanupShortcut.tap != nil)
+            || [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut].contains { $0.tap != nil }
     }
 
     private func registerMainHotKey() {
@@ -137,7 +177,13 @@ final class AppController: NSObject, NSMenuDelegate {
         settings.insertAtCursor = old.insertAtCursor
         storage.save(settings)
         if new.startShortcut != old.startShortcut { registerMainHotKey() }
-        if new.cancelShortcut != old.cancelShortcut, state == .recording { bindCancel() }
+        if new.cancelShortcut != old.cancelShortcut, state == .recording || state == .reviewing { bindCancel() }
+        if state == .recording || state == .reviewing {
+            bindCleanup()
+            bindBarKeys()
+            updateBarControls()
+        }
+        if new.cleanupModel != old.cleanupModel, let model = cleanupChoice { cleaner.prepare(model) }
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted { watchForTrust() }
     }
 
@@ -146,9 +192,15 @@ final class AppController: NSObject, NSMenuDelegate {
         if paused {
             startBinding?.stop()
             cancelBinding?.stop()
+            cleanupBinding?.stop()
+            unbindBarKeys()
         } else {
             registerMainHotKey()
-            if state == .recording { bindCancel() }
+            if state == .recording || state == .reviewing {
+                bindCancel()
+                bindCleanup()
+                bindBarKeys()
+            }
         }
     }
 
@@ -159,10 +211,136 @@ final class AppController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// The clean-up shortcut, listened for only while recording or reviewing.
+    private func bindCleanup() {
+        cleanupBinding?.stop()
+        cleanupBinding = nil
+        guard cleanupChoice != nil else { return }
+        cleanupBinding = ShortcutBinding(settings.cleanupShortcut, hotKeys: hotKeys) { [weak self] in
+            self?.cleanupPressed()
+        }
+    }
+
+    private func bindBarKeys() {
+        unbindBarKeys()
+        barBindings = [
+            ShortcutBinding(settings.sendToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleSendInBar() },
+            ShortcutBinding(settings.nextTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: 1) },
+            ShortcutBinding(settings.previousTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: -1) },
+        ]
+        for (binding, shortcut) in zip(barBindings, [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut])
+        where !binding.ok {
+            log.error("\(shortcut.label, privacy: .public) is taken by another app")
+        }
+    }
+
+    private func unbindBarKeys() {
+        barBindings.forEach { $0.stop() }
+        barBindings = []
+    }
+
+    /// The Send checkbox or its shortcut: this message presses Enter or not, and so do the next
+    /// ones (it is the "Second press sends" setting).
+    private func toggleSendInBar() {
+        guard state != .idle, !sendsToCursor else { return }
+        settings.submitOnSecondPress.toggle()
+        storage.save(settings)
+        settingsWindow.update(settings)
+        updateBarControls()
+    }
+
+    /// The session shortcuts: this message, and the next ones, go to the next or previous entry of
+    /// the session list (the cursor first, as in the menu).
+    private func moveTarget(by step: Int) {
+        guard state != .idle else { return }
+        dismissSpokenRoute()
+        let agents = sessionsNow()
+        let count = agents.count + 1
+        let current = settings.insertAtCursor
+            ? 0 : settings.pinned.flatMap { p in agents.firstIndex { p.locate(in: [$0]) != nil } }.map { $0 + 1 }
+        let next = ((current ?? (step > 0 ? 0 : 1)) + step + count) % count
+        if next == 0 {
+            settings.insertAtCursor = true
+        } else {
+            settings.pinned = PinnedTarget(agent: agents[next - 1])
+            settings.insertAtCursor = false
+        }
+        storage.save(settings)
+        updateStatusTitle()
+        updateBarControls()
+    }
+
+    /// The Send checkbox, the destination and the hint, after any of them changed.
+    private func updateBarControls() {
+        model.submit = settings.submitOnSecondPress
+        model.showsSubmit = !sendsToCursor
+        model.routeSpoken = spokenRoute != nil
+        model.submitShortcut = settings.sendToggleShortcut.label
+        model.targetShortcuts = Self.pairLabel(settings.previousTargetShortcut, settings.nextTargetShortcut)
+        model.targetName = targetLabel
+        if state == .reviewing { model.hint = reviewHint() } else if state == .recording { refreshHint() }
+    }
+
+    /// A destination said at the start or end of the message: shown, with a pulse, as soon as it
+    /// is heard; used for this message only.
+    private func evaluateRoute() {
+        guard settings.spokenRouting, !routeDismissed else { return }
+        let before = spokenRoute?.target
+        switch Routing.find(in: composer.render(), candidates: routeCandidates) {
+        case .route(let route):
+            spokenRoute = route
+            model.routeNote = "heard “\(route.phrase)”"
+            model.routeWarning = false
+        case .unclear(let why):
+            spokenRoute = nil
+            model.routeNote = why + " · not switching"
+            model.routeWarning = true
+        case .none:
+            spokenRoute = nil
+            model.routeNote = ""
+        }
+        if spokenRoute?.target != before {
+            model.targetPulse += 1
+            log.info("spoken route: \(self.spokenRoute == nil ? "none" : self.sendsToCursor ? "cursor" : "session", privacy: .public)")
+        }
+        updateBarControls()
+    }
+
+    /// Sessions that can be named, looked up when a recording starts.
+    private func loadRouteCandidates() {
+        let agents = sessionsNow()
+        routeAgents = Dictionary(agents.map { ($0.paneID, $0) }, uniquingKeysWith: { a, _ in a })
+        routeCandidates = agents.map { agent in
+            let title = agent.displayName.components(separatedBy: " · ").first ?? agent.displayName
+            return Routing.Candidate(id: agent.paneID, names: [agent.folderName, title])
+        }
+    }
+
+    /// A click or a shortcut picked the destination: it beats anything said in this message.
+    private func dismissSpokenRoute() {
+        guard state != .idle else { return }
+        routeDismissed = true
+        spokenRoute = nil
+        model.routeNote = ""
+        model.targetPulse += 1
+    }
+
+    /// "⌃⌥↑↓" for the usual pair, otherwise both shortcuts.
+    static func pairLabel(_ up: Shortcut, _ down: Shortcut) -> String {
+        if up.tap == nil, down.tap == nil, up.modifiers == down.modifiers, up.keyName == "↑", down.keyName == "↓" {
+            return Shortcut.describe(modifiers: up.modifiers) + "↑↓"
+        }
+        return "\(up.label) \(down.label)"
+    }
+
+    /// The model picked in Settings, if any.
+    private var cleanupChoice: CleanupModel? { CleanupModel.named(settings.cleanupModel) }
+
     func toggle() {
         switch state {
         case .idle: startRecording()
         case .recording: Task { await finishAndSend() }
+        case .reviewing: Task { await deliver() }
         case .finishing: break
         }
     }
@@ -175,20 +353,29 @@ final class AppController: NSObject, NSMenuDelegate {
             return
         }
         hideWork?.cancel()
+        log.info("recording; speech \(String(describing: self.speechState), privacy: .public)")
         state = .recording
         generation += 1
         composer = Composer()
+        beforeCleanup = nil
+        afterCleanup = nil
+        spokenRoute = nil
+        routeDismissed = false
+        model.routeNote = ""
+        if settings.spokenRouting { loadRouteCandidates() }
         recordingID = Self.stamp()
         recordingStart = Date()
-        model.targetName = targetLabel
         model.phase = .listening
         model.text = ""
         model.shots = []
         model.elapsed = 0
-        refreshHint()
+        updateBarControls()
         panel.present()
 
         bindCancel()
+        bindCleanup()
+        bindBarKeys()
+        if let model = cleanupChoice { cleaner.prepare(model) }
         clipboard.start()
         if settings.hideDuringScreenshots { screenshotKeys.start() }
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -224,6 +411,7 @@ final class AppController: NSObject, NSMenuDelegate {
         guard gen == generation, state != .idle else { return }
         composer.updateTranscript(text, newWordStartTimes: ends, at: time)
         model.text = composer.render()
+        evaluateRoute()
     }
 
     private func userEdited(_ text: String) {
@@ -271,8 +459,9 @@ final class AppController: NSObject, NSMenuDelegate {
         if state == .recording, cancelBinding == nil { bindCancel() }
     }
 
-    private func finishAndSend() async {
-        guard state == .recording else { return }
+    /// Stops listening and puts the final transcript in the bar. False if the recording was
+    /// cancelled meanwhile.
+    private func finishListening() async -> Bool {
         state = .finishing
         stopCapture()
         let gen = generation
@@ -283,10 +472,119 @@ final class AppController: NSObject, NSMenuDelegate {
                 composer.updateTranscript(final.text, newWordStartTimes: final.wordStarts, at: final.time)
                 composer.finish(at: final.time)
                 model.text = composer.render()
+                log.info("listening stopped: \(Cleanup.wordCount(self.model.text)) words")
+                evaluateRoute()
+                if let route = spokenRoute { setText(route.remaining) }  // the phrase isn't for Claude
             }
         }
         speechStart = nil
         speechListening = false
+        return gen == generation
+    }
+
+    private func finishAndSend() async {
+        guard state == .recording else { return }
+        guard await finishListening() else { return }
+        if settings.cleanupOnSend, cleanupChoice != nil {
+            let gen = generation
+            if let problem = await cleanUp() {
+                guard gen == generation else { return }
+                // Don't send something you haven't seen: show your text and let you decide.
+                review(note: "Kept your text (\(problem))")
+                return
+            }
+            guard gen == generation else { return }
+        }
+        await deliver()
+    }
+
+    /// The clean-up shortcut: while recording, stop listening and show the tidied text to check;
+    /// while reviewing, switch between your text and the tidied one.
+    private func cleanupPressed() {
+        switch state {
+        case .recording:
+            Task {
+                guard await finishListening() else { return }
+                let gen = generation
+                let problem = await cleanUp()
+                guard gen == generation else { return }
+                review(note: problem.map { "Kept your text (\($0))" })
+            }
+        case .reviewing:
+            if let after = afterCleanup, let before = beforeCleanup, model.text == after {
+                setText(before)
+                review(note: "Your original text")
+            } else if let after = afterCleanup, let before = beforeCleanup, model.text == before {
+                setText(after)
+                review(note: nil)
+            } else {
+                state = .finishing
+                Task {
+                    let gen = generation
+                    let problem = await cleanUp()
+                    guard gen == generation else { return }
+                    review(note: problem.map { "Kept your text (\($0))" })
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    /// Tidies the text in the bar with the model picked in Settings. Returns why not, if it couldn't.
+    private func cleanUp() async -> String? {
+        guard let choice = cleanupChoice else { return "no model picked in Settings" }
+        let terms = storage.vocabulary(forRepoAt: repoPath).map(\.text)
+        let rules = storage.replacementRules() + terms.map { ($0, $0) }
+        let original = Vocabulary.applyReplacements(composer.render(), rules)
+        guard Cleanup.wordCount(original) > 0 else { return "nothing heard yet" }
+        model.phase = .info("Tidying up with \(choice.name)…")
+        let gen = generation
+        let started = Date()
+        let result = await cleaner.clean(original, terms: terms, with: choice)
+        log.info("tidy with \(choice.id, privacy: .public): \(String(describing: result.map { Cleanup.wordCount($0) }), privacy: .public) in \(Date().timeIntervalSince(started)) s")
+        guard gen == generation else { return "cancelled" }
+        switch result {
+        case .success(let cleaned):
+            beforeCleanup = original
+            afterCleanup = cleaned
+            setText(cleaned)
+            return nil
+        case .failure(let failure):
+            return failure.description
+        }
+    }
+
+    private func setText(_ text: String) {
+        composer.userEdited(text)
+        model.text = text
+    }
+
+    /// Listening has stopped; the bar waits for you to check the text and send it.
+    private func review(note: String?) {
+        state = .reviewing
+        model.phase = .info(note ?? "Tidied · check it, then send")
+        model.hint = reviewHint()
+        if cancelBinding == nil { bindCancel() }
+        if cleanupBinding == nil { bindCleanup() }
+        if barBindings.isEmpty { bindBarKeys() }
+    }
+
+    private func reviewHint() -> String {
+        let send = sendsToCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
+        var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel"]
+        if afterCleanup != nil { parts.append("\(settings.cleanupShortcut.label) switches to \(model.text == afterCleanup ? "your original" : "the tidied text")") }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    /// Sends what the bar shows to the open session, or inserts it at the cursor.
+    private func deliver() async {
+        guard state == .finishing || state == .reviewing else { return }
+        cancelBinding?.stop()
+        cancelBinding = nil
+        cleanupBinding?.stop()
+        cleanupBinding = nil
+        unbindBarKeys()
         // Replacements, then each of your terms in the case you wrote it ("Herdr" → "herdr").
         let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: repoPath).map { ($0.text, $0.text) }
         let pieces = composer.pieces().map { piece -> Piece in
@@ -295,11 +593,21 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         let rendered = composer.render()
         let id = recordingID
+        let toCursor = sendsToCursor, sendTo = sendTarget, routed = spokenRoute != nil
+        defer { if state == .idle { spokenRoute = nil } }  // a new recording has its own
+        if routed, settings.spokenRouteSticks {
+            // The named session becomes the open one, as if picked from the menu.
+            settings.insertAtCursor = toCursor
+            if !toCursor, let sendTo { settings.pinned = sendTo }
+            storage.save(settings)
+            updateStatusTitle()
+        }
         state = .idle  // you can start the next message while this one is delivered
+        log.info("deliver: \(pieces.count) pieces")
         guard !pieces.isEmpty else { panel.dismiss(); return }
         saveLastMessage(rendered)
 
-        if settings.insertAtCursor {
+        if toCursor {
             panel.dismiss()  // hand the keyboard back to the app with the cursor
             if await CursorInserter.insert(pieces) {
                 if state == .idle { flash(.sent, for: 1.0) }
@@ -308,7 +616,7 @@ final class AppController: NSObject, NSMenuDelegate {
             }
             return
         }
-        guard let target = settings.pinned else {
+        guard let target = sendTo else {
             flash(.error("Open a session first: click the menu-bar icon and pick a Claude session"))
             return
         }
@@ -321,12 +629,14 @@ final class AppController: NSObject, NSMenuDelegate {
         pendingSends -= 1
         switch result {
         case .success(let found):
-            if found != settings.pinned, settings.pinned?.sessionID == found.sessionID {
+            if !routed, found != settings.pinned, settings.pinned?.sessionID == found.sessionID {
                 settings.pinned = found
                 storage.save(settings)
             }
+            log.info("sent")
             if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
         case .failure(let error):
+            log.error("not sent: \(String(describing: error), privacy: .public)")
             let file = storage.root.appendingPathComponent("unsent-\(id).txt")
             try? rendered.write(to: file, atomically: true, encoding: .utf8)
             let message = "Not sent: \(error). Saved to \(file.lastPathComponent)"
@@ -346,9 +656,10 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func cancelRecording() {
-        guard state == .recording else { return }
+        guard state == .recording || state == .reviewing else { return }
         stopCapture()
         state = .idle
+        spokenRoute = nil
         generation += 1
         let start = speechStart
         speechStart = nil
@@ -367,6 +678,9 @@ final class AppController: NSObject, NSMenuDelegate {
         reappearWork?.cancel()
         cancelBinding?.stop()
         cancelBinding = nil
+        cleanupBinding?.stop()
+        cleanupBinding = nil
+        unbindBarKeys()
         panel.reappear()
     }
 
@@ -386,8 +700,9 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Bar helpers
 
     private func refreshHint() {
-        let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
+        let send = sendsToCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel", "⌘⌃⇧4 adds a screenshot"]
+        if cleanupChoice != nil { parts.insert("\(settings.cleanupShortcut.label) to tidy up", at: 2) }
         switch speechState {
         case .loading(let s): parts.insert(s, at: 0)
         case .failed(let s): parts.insert(s + " (type instead)", at: 0)
@@ -405,6 +720,9 @@ final class AppController: NSObject, NSMenuDelegate {
         model.hint = ""
         model.phase = phase
         model.targetName = targetLabel
+        model.showsSubmit = false
+        model.targetShortcuts = ""
+        model.routeNote = ""
         panel.present()
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -428,7 +746,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Menu
 
     private func updateStatusTitle() {
-        statusItem.button?.title = targetLabel.isEmpty ? "" : " " + targetLabel
+        statusItem.button?.title = statusLabel.isEmpty ? "" : " " + statusLabel
         statusItem.button?.imagePosition = .imageLeading
     }
 
@@ -443,7 +761,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let action = state == .recording ? "Send" : "Start talking"
+        let action = state == .recording || state == .reviewing ? "Send" : "Start talking"
         menu.addItem(item("\(action)   \(hotKeyLabel)", #selector(menuToggle)))
         menu.addItem(.separator())
         menu.addItem(header("Open a session"))
@@ -490,6 +808,13 @@ final class AppController: NSObject, NSMenuDelegate {
                 menu.addItem(disabled("\(p.name) (not running)"))
             }
         }
+        if settings.spokenRouting {
+            let name = agents.first?.folderName ?? "showtell"
+            menu.addItem(.separator())
+            menu.addItem(disabled(settings.spokenRouteSticks ? "Or say it:" : "Or say it, for one message:"))
+            menu.addItem(disabled("   “For the \(name) session, …”   “Send to \(name): …”"))
+            menu.addItem(disabled("   “… this should go to \(name)”   “… paste it at the cursor”"))
+        }
     }
 
     /// Sessions for a menu, built on the spot: herdr answers in milliseconds, while tmux and
@@ -535,6 +860,7 @@ final class AppController: NSObject, NSMenuDelegate {
     @objc private func pick(_ sender: NSMenuItem) {
         guard let pane = sender.representedObject as? String,
               let agent = sessionsNow().first(where: { $0.paneID == pane }) else { return }
+        dismissSpokenRoute()
         settings.pinned = PinnedTarget(agent: agent)
         settings.insertAtCursor = false
         storage.save(settings)
@@ -542,23 +868,35 @@ final class AppController: NSObject, NSMenuDelegate {
         if state == .idle {
             flash(.info("Opened \(agent.displayName) · \(hotKeyLabel) to start talking"), for: 2.5)
         } else {
-            model.targetName = agent.displayName  // this message goes to the new session
+            updateBarControls()  // this message goes to the new session
         }
     }
 
     @objc private func pickCursor() {
+        dismissSpokenRoute()
         settings.insertAtCursor = true
         storage.save(settings)
         updateStatusTitle()
         if state == .idle {
             flash(.info("Inserting at the cursor · \(hotKeyLabel) to start talking"), for: 2.5)
         } else {
-            model.targetName = targetLabel
+            updateBarControls()
         }
     }
 
-    /// Where the message goes, as shown in the bar and the menu bar.
-    private var targetLabel: String { settings.insertAtCursor ? "Cursor" : settings.pinned?.name ?? "" }
+    /// Where this message goes: a spoken destination, else the open session or the cursor.
+    private var sendsToCursor: Bool {
+        if let route = spokenRoute { return route.target == .cursor }
+        return settings.insertAtCursor
+    }
+    private var sendTarget: PinnedTarget? {
+        if case .session(let id)? = spokenRoute?.target, let agent = routeAgents[id] { return PinnedTarget(agent: agent) }
+        return settings.pinned
+    }
+    /// Where the message goes, as shown in the bar.
+    private var targetLabel: String { sendsToCursor ? "Cursor" : sendTarget?.name ?? "" }
+    /// The open session, as shown in the menu bar.
+    private var statusLabel: String { settings.insertAtCursor ? "Cursor" : settings.pinned?.name ?? "" }
     /// The repo whose `.github/dictation.md` adds words: the open session's, unless inserting at the cursor.
     private var repoPath: String? { settings.insertAtCursor ? nil : settings.pinned?.cwd }
 
@@ -566,6 +904,7 @@ final class AppController: NSObject, NSMenuDelegate {
         var s = settings
         s.submitOnSecondPress.toggle()
         apply(s)
+        settingsWindow.update(settings)
     }
 
     @objc private func toggleHide() {
@@ -584,8 +923,12 @@ final class AppController: NSObject, NSMenuDelegate {
             settings: settings,
             onChange: { [weak self] new in self?.apply(new) },
             onRecording: { [weak self] recording in self?.pauseShortcuts(recording) },
+            cleaner: cleaner,
             onAskAccessibility: { [weak self] in self?.askAccessibility() })
     }
     @objc private func showShots() { NSWorkspace.shared.open(storage.shotsURL) }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    /// llama.cpp must let go of a loaded model before the process exits.
+    func shutdown() { cleaner.shutdownBlocking() }
 }

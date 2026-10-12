@@ -13,9 +13,19 @@ let package = Package(
     ],
     targets: [
         .target(name: "ShowtellCore"),
+        // llama.cpp's prebuilt framework runs the downloadable clean-up models (Metal included).
+        .binaryTarget(
+            name: "llama",
+            url: "https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-xcframework.zip",
+            checksum: "bbf935b50774634bd3ecbd601f98ddfc49342bbaf67010c23dd346d67e8a82eb"
+        ),
         .executableTarget(
             name: "Showtell",
-            dependencies: ["ShowtellCore", .product(name: "FluidAudio", package: "FluidAudio")]
+            dependencies: ["ShowtellCore", "llama", .product(name: "FluidAudio", package: "FluidAudio")],
+            linkerSettings: [
+                // Apple Intelligence's model is macOS 26 only; the app still starts on 14.
+                .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels"]),
+            ]
         ),
         .executableTarget(name: "showtell-cli", dependencies: ["ShowtellCore"]),
         .testTarget(name: "ShowtellCoreTests", dependencies: ["ShowtellCore"]),

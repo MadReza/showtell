@@ -11,10 +11,26 @@ final class OverlayModel: ObservableObject {
     @Published var shots: [(Int, NSImage)] = []
     @Published var hint = ""
     @Published var elapsed: Double = 0
+    /// The Send checkbox: press Enter after pasting, or leave the text in Claude's input.
+    @Published var submit = true
+    /// Hidden when inserting at the cursor, which never presses Enter.
+    @Published var showsSubmit = true
+    @Published var submitShortcut = ""
+    @Published var targetShortcuts = ""
+    /// What the spoken destination was ("heard “for the showtell session”"), or why it was ignored.
+    @Published var routeNote = ""
+    @Published var routeWarning = false
+    /// The destination came from what you said (a microphone instead of the arrow).
+    @Published var routeSpoken = false
+    /// Bumped whenever the destination changes during a message: the session name pulses.
+    @Published var targetPulse = 0
+    /// True for a moment after `targetPulse` changes (kept here: @State needs Xcode's SwiftUI macros).
+    @Published var pulsing = false
     /// Called when the user types in the bar (not when the transcript updates it).
     var onUserEdit: ((String) -> Void)?
     /// Called when the session name is clicked: shows the session list to switch to.
     var onShowSessions: (() -> Void)?
+    var onToggleSubmit: (() -> Void)?
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
@@ -34,7 +50,8 @@ final class OverlayPanel: NSPanel {
         hasShadow = true
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
-        sharingType = .none  // keep the bar out of screenshots and recordings
+        // Keep the bar out of screenshots and recordings (SHOWTELL_CAPTURE_BAR=1 lets it in, for docs and tests).
+        if ProcessInfo.processInfo.environment["SHOWTELL_CAPTURE_BAR"] == nil { sharingType = .none }
         contentView = NSHostingView(rootView: OverlayView(model: model))
     }
 
@@ -58,6 +75,7 @@ final class OverlayPanel: NSPanel {
 
 struct OverlayView: View {
     @ObservedObject var model: OverlayModel
+    private var pulse: Bool { model.pulsing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -82,18 +100,50 @@ struct OverlayView: View {
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
             }
             Spacer()
+            if !model.routeNote.isEmpty {
+                Text(model.routeNote)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(model.routeWarning ? Color.orange : Color.accentColor)
+                    .lineLimit(1).truncationMode(.middle)
+                    .transition(.opacity)
+            }
+            if model.showsSubmit {
+                Toggle(isOn: Binding(get: { model.submit }, set: { _ in model.onToggleSubmit?() })) {
+                    HStack(spacing: 4) {
+                        Text("Send").font(.system(size: 12, weight: .medium))
+                        Text(model.submitShortcut).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .help("Checked: press Enter after pasting. Unchecked: leave the text in Claude's input for you. Changes the default too.")
+            }
             Button { model.onShowSessions?() } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Image(systemName: model.routeSpoken ? "mic.fill" : "arrow.right").font(.system(size: 11))
+                        .foregroundStyle(pulse ? Color.white : model.routeSpoken ? Color.accentColor : Color.secondary)
                     Text(model.targetName.isEmpty ? "no session" : model.targetName)
                         .font(.system(size: 12, weight: .medium)).lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    if !model.targetShortcuts.isEmpty {
+                        Text(model.targetShortcuts).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(.white.opacity(0.08), in: Capsule())
+                .background(pulse ? Color.accentColor : Color.white.opacity(0.08), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(model.routeSpoken ? 0.9 : 0), lineWidth: 1.5))
+                .scaleEffect(pulse ? 1.08 : 1, anchor: .trailing)
+                .shadow(color: Color.accentColor.opacity(pulse ? 0.8 : 0), radius: pulse ? 10 : 0)
             }
             .buttonStyle(.plain)
-            .help("Send this message to another session")
+            .help("Send this message to another session (\(model.targetShortcuts) moves through the list)")
+        }
+        .animation(.easeOut(duration: 0.25), value: model.routeNote)
+        .onChange(of: model.targetPulse) { _, _ in
+            // The destination changed: a bounce and a glow that fades, to catch the eye.
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.45)) { model.pulsing = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                withAnimation(.easeOut(duration: 0.9)) { model.pulsing = false }
+            }
         }
     }
 

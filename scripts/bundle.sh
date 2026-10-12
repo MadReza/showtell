@@ -18,6 +18,10 @@ cp Resources/AppIcon.icns "$app/Contents/Resources/"
 for b in "$bin"/*.bundle; do
   [ -e "$b" ] && cp -R "$b" "$app/Contents/Resources/"
 done
+# llama.cpp (runs the downloadable clean-up models) is a framework next to the binary.
+mkdir -p "$app/Contents/Frameworks"
+ditto "$bin/llama.framework" "$app/Contents/Frameworks/llama.framework"
+install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/Showtell" 2>/dev/null || true
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -45,5 +49,6 @@ PLIST
 # A stable identity keeps macOS permissions (Accessibility, Microphone) across rebuilds; ad-hoc
 # signatures change with every build. Create one with scripts/make-signing-cert.sh.
 identity=$(security find-identity -p codesigning 2>/dev/null | awk -F'"' '/"Showtell Local Signing"/ {print $2; exit}')
+codesign --force --sign "${identity:--}" "$app/Contents/Frameworks/llama.framework"
 codesign --force --deep --sign "${identity:--}" --identifier dev.showtell.Showtell "$app"
 echo "built $app"

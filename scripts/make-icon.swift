@@ -1,4 +1,6 @@
-// Draws Resources/AppIcon.icns: a waveform inside a camera viewfinder, on a rounded tile.
+// Draws Resources/AppIcon.icns: a waveform inside a camera viewfinder. The square is filled edge to
+// edge with no transparency: macOS 26 rounds it itself, where an icon with transparent margins gets
+// shrunk onto a light plate.
 //   swift scripts/make-icon.swift
 import AppKit
 
@@ -9,18 +11,18 @@ func draw(_ size: CGFloat) -> NSBitmapImageRep {
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let s = size / 1024
-    // Tile: macOS icon grid, 824 pt square with 185 pt corners inside 1024.
-    let tile = NSRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s)
-    let path = NSBezierPath(roundedRect: tile, xRadius: 185 * s, yRadius: 185 * s)
+    let path = NSBezierPath(rect: NSRect(x: 0, y: 0, width: size, height: size))
     NSGradient(colors: [NSColor(red: 0.98, green: 0.45, blue: 0.27, alpha: 1),
                         NSColor(red: 0.85, green: 0.22, blue: 0.42, alpha: 1)])!.draw(in: path, angle: -60)
     NSColor.white.setStroke()
     NSColor.white.setFill()
+    // Small sizes (lists such as Login Items, Spotlight) get fewer, thicker bars and no corners.
+    let small = size <= 64
     // Viewfinder corners.
-    let inset: CGFloat = 230 * s, len: CGFloat = 120 * s
+    let inset: CGFloat = 190 * s, len: CGFloat = 165 * s
     let lo = inset, hi = 1024 * s - inset
     let corners = NSBezierPath()
-    corners.lineWidth = 34 * s
+    corners.lineWidth = 56 * s
     corners.lineCapStyle = .round
     corners.lineJoinStyle = .round
     for (x, y, dx, dy) in [(lo, lo, 1.0, 1.0), (hi, lo, -1.0, 1.0), (lo, hi, 1.0, -1.0), (hi, hi, -1.0, -1.0)] {
@@ -28,10 +30,10 @@ func draw(_ size: CGFloat) -> NSBitmapImageRep {
         corners.line(to: NSPoint(x: x, y: y))
         corners.line(to: NSPoint(x: x, y: y + dy * len))
     }
-    corners.stroke()
+    if !small { corners.stroke() }
     // Waveform bars.
-    let heights: [CGFloat] = [110, 230, 340, 200, 290, 150]
-    let bar: CGFloat = 46 * s, gap: CGFloat = 30 * s
+    let heights: [CGFloat] = small ? [300, 620, 440, 220] : [150, 310, 460, 270, 390, 200]
+    let bar: CGFloat = (small ? 130 : 66) * s, gap: CGFloat = (small ? 80 : 40) * s
     let total = CGFloat(heights.count) * bar + CGFloat(heights.count - 1) * gap
     var x = (1024 * s - total) / 2
     for h in heights {
