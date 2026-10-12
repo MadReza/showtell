@@ -1,6 +1,11 @@
 import AppKit
 import Carbon.HIToolbox
+import os
 import ShowtellCore
+
+/// `log stream --predicate 'subsystem == "dev.showtell"'` shows what happened to each message
+/// (states and word counts, never the words).
+let log = Logger(subsystem: "dev.showtell", category: "app")
 
 /// Ties the parts together: hotkey → bar + speech + clipboard screenshots → outbox → herdr pane.
 @MainActor
@@ -209,6 +214,7 @@ final class AppController: NSObject, NSMenuDelegate {
             return
         }
         hideWork?.cancel()
+        log.info("recording; speech \(String(describing: self.speechState), privacy: .public)")
         state = .recording
         generation += 1
         composer = Composer()
@@ -322,6 +328,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 composer.updateTranscript(final.text, newWordStartTimes: final.wordStarts, at: final.time)
                 composer.finish(at: final.time)
                 model.text = composer.render()
+                log.info("listening stopped: \(Cleanup.wordCount(self.model.text)) words")
             }
         }
         speechStart = nil
@@ -361,6 +368,9 @@ final class AppController: NSObject, NSMenuDelegate {
             if let after = afterCleanup, let before = beforeCleanup, model.text == after {
                 setText(before)
                 review(note: "Your original text")
+            } else if let after = afterCleanup, let before = beforeCleanup, model.text == before {
+                setText(after)
+                review(note: nil)
             } else {
                 state = .finishing
                 Task {
@@ -381,9 +391,12 @@ final class AppController: NSObject, NSMenuDelegate {
         let terms = storage.vocabulary(forRepoAt: repoPath).map(\.text)
         let rules = storage.replacementRules() + terms.map { ($0, $0) }
         let original = Vocabulary.applyReplacements(composer.render(), rules)
+        guard Cleanup.wordCount(original) > 0 else { return "nothing heard yet" }
         model.phase = .info("Tidying up with \(choice.name)…")
         let gen = generation
+        let started = Date()
         let result = await cleaner.clean(original, terms: terms, with: choice)
+        log.info("tidy with \(choice.id, privacy: .public): \(String(describing: result.map { Cleanup.wordCount($0) }), privacy: .public) in \(Date().timeIntervalSince(started)) s")
         guard gen == generation else { return "cancelled" }
         switch result {
         case .success(let cleaned):
@@ -429,6 +442,7 @@ final class AppController: NSObject, NSMenuDelegate {
         let rendered = composer.render()
         let id = recordingID
         state = .idle  // you can start the next message while this one is delivered
+        log.info("deliver: \(pieces.count) pieces")
         guard !pieces.isEmpty else { panel.dismiss(); return }
         saveLastMessage(rendered)
 
@@ -458,8 +472,10 @@ final class AppController: NSObject, NSMenuDelegate {
                 settings.pinned = found
                 storage.save(settings)
             }
+            log.info("sent")
             if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
         case .failure(let error):
+            log.error("not sent: \(String(describing: error), privacy: .public)")
             let file = storage.root.appendingPathComponent("unsent-\(id).txt")
             try? rendered.write(to: file, atomically: true, encoding: .utf8)
             let message = "Not sent: \(error). Saved to \(file.lastPathComponent)"
