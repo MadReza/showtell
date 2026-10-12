@@ -33,6 +33,13 @@ not just the paths.
 3. Pressing Enter while Claude works **queues** the message, images included.
 4. Never paste while a dialog is open: the paste lands in the dialog. herdr reports this as status
    `blocked`.
+5. **Clear the prompt first** (12 Oct 2026): a paste is appended to whatever is already typed, and
+   both are submitted. Ctrl+U deletes only one *screen* line (a wrapped line takes several), and
+   Ctrl+K at the end of a line joins the next one. Rounds of Ctrl+E, Ctrl+K, Ctrl+U, Backspace
+   empty the input wherever the cursor is, also while Claude works (it was not interrupted), and do
+   nothing to an empty prompt. The empty box shows a dim placeholder (`Try "…"`, or "Press up to
+   edit queued messages"), so read the screen with colours (`pane.read` format `ansi`). Claude
+   Code puts a no-break space after `❯`.
 
 ## Paths compared
 

@@ -190,6 +190,14 @@ paste markers, then a carriage return. A session waiting on a dialog (status `wa
 pasted into. macOS asks once for permission to control iTerm2. A session that is in herdr is
 always reached through herdr.
 
+**Text already in the prompt:** before pasting, Showtell reads the pane's screen and looks at
+Claude Code's input box (the `❯` line between the two rules; the dim placeholder doesn't count).
+If something is typed there, it is cleared with Ctrl+E, Ctrl+K, Ctrl+U, Backspace per line (keys
+that only edit the input, never Ctrl+C, Ctrl+D or Esc), and the screen is read again. If the box
+won't empty, the message is not pasted and shows as not delivered. The cleared text is kept in
+History as "Cleared from the prompt". iTerm2 gives plain text only, so there a lone `Try "…"`
+line is taken for the placeholder.
+
 **At the cursor:** each part goes through the clipboard and a synthesized ⌘V, in order; your
 clipboard is put back afterwards.
 

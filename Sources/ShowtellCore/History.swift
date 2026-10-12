@@ -45,9 +45,12 @@ public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
     public var submitted: Bool
     /// Why it could not be delivered, if it couldn't.
     public var failure: String?
+    /// Text that was already in the session's prompt and was cleared before pasting.
+    public var clearedDraft: String?
 
     public init(id: String = UUID().uuidString, date: Date = Date(), destination: HistoryDestination, text: String,
-                shots: [Shot] = [], clips: [Clip] = [], submitted: Bool, failure: String? = nil) {
+                shots: [Shot] = [], clips: [Clip] = [], submitted: Bool, failure: String? = nil,
+                clearedDraft: String? = nil) {
         self.id = id
         self.date = date
         self.destination = destination
@@ -56,6 +59,7 @@ public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
         self.clips = clips
         self.submitted = submitted
         self.failure = failure
+        self.clearedDraft = clearedDraft
     }
 
     /// A message as sent, keeping only the screenshots and copied text whose marker is still in it.
@@ -129,6 +133,14 @@ public struct HistoryStore: Sendable {
         var entries = load()
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i].failure = reason
+        try save(entries)
+    }
+
+    /// Keeps the text that was cleared from the prompt before this message was pasted.
+    public func setClearedDraft(_ id: String, _ draft: String) throws {
+        var entries = load()
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[i].clearedDraft = draft
         try save(entries)
     }
 

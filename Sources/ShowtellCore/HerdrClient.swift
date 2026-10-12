@@ -79,8 +79,16 @@ public protocol HerdrTransport: Sendable {
     /// Bracketed paste of `text` into the pane (no Enter).
     func paste(_ text: String, pane: String) async throws
     func pressEnter(pane: String) async throws
-    func readVisible(pane: String) async throws -> String
+    /// The visible screen, with colour escapes where the terminal can give them (see `PromptInput`).
+    func readScreen(pane: String) async throws -> String
+    /// Sends `rounds` rounds of Ctrl+E, Ctrl+K, Ctrl+U, Backspace. Each round empties one screen line
+    /// of Claude Code's input, wherever the cursor is, and does nothing to an empty one. These keys only
+    /// edit the input: unlike Ctrl+C, Ctrl+D or Esc they can't interrupt, exit or open a menu.
+    func sendClearKeys(pane: String, rounds: Int) async throws
 }
+
+/// One round of `sendClearKeys`, as herdr key names.
+public let clearKeysRound = ["ctrl+e", "ctrl+k", "ctrl+u", "backspace"]
 
 /// Talks to herdr's newline-delimited JSON socket, one request per connection.
 public struct HerdrClient: HerdrTransport {
@@ -125,12 +133,17 @@ public struct HerdrClient: HerdrTransport {
         _ = try await call("pane.send_keys", params: ["pane_id": pane, "keys": ["enter"]])
     }
 
-    public func readVisible(pane: String) async throws -> String {
-        struct Result: Decodable { let text: String? }
+    public func sendClearKeys(pane: String, rounds: Int) async throws {
+        let keys = Array(Array(repeating: clearKeysRound, count: rounds).joined())
+        _ = try await call("pane.send_keys", params: ["pane_id": pane, "keys": keys])
+    }
+
+    public func readScreen(pane: String) async throws -> String {
+        struct Read: Decodable { let text: String }
+        struct Result: Decodable { let read: Read }
         let data = try await call(
-            "pane.read", params: ["pane_id": pane, "source": "visible", "format": "text", "strip_ansi": true])
-        if let r = try? JSONDecoder().decode(Result.self, from: data), let t = r.text { return t }
-        return String(decoding: data, as: UTF8.self)
+            "pane.read", params: ["pane_id": pane, "source": "visible", "format": "ansi", "strip_ansi": false])
+        return try JSONDecoder().decode(Result.self, from: data).read.text
     }
 
     /// Sends one request and returns the raw JSON of its `result`.
