@@ -38,6 +38,9 @@ Updated 11 Oct 2026. Spec: [spec.md](spec.md).
    verified with throwaway Claude sessions in both (two images, answered in order).
 5. **Region capture and OCR terms:** optional ScreenCaptureKit capture; feed OCR words to the boost.
 6. **Orchestration:** one Claude session receiving all inputs and dispatching to others.
+7. **To do: page elements while talking.** Copy an element with react-grab (or agentation) mid-sentence
+   and it lands in the message where you were speaking; later maybe an Accessibility picker.
+   Exploration and options: [element-picker.md](reports/element-picker.md).
 
 ## Known risks
 
