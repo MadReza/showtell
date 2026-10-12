@@ -11,10 +11,17 @@ final class OverlayModel: ObservableObject {
     @Published var shots: [(Int, NSImage)] = []
     @Published var hint = ""
     @Published var elapsed: Double = 0
+    /// The Send checkbox: press Enter after pasting, or leave the text in Claude's input.
+    @Published var submit = true
+    /// Hidden when inserting at the cursor, which never presses Enter.
+    @Published var showsSubmit = true
+    @Published var submitShortcut = ""
+    @Published var targetShortcuts = ""
     /// Called when the user types in the bar (not when the transcript updates it).
     var onUserEdit: ((String) -> Void)?
     /// Called when the session name is clicked: shows the session list to switch to.
     var onShowSessions: (() -> Void)?
+    var onToggleSubmit: (() -> Void)?
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
@@ -34,7 +41,8 @@ final class OverlayPanel: NSPanel {
         hasShadow = true
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
-        sharingType = .none  // keep the bar out of screenshots and recordings
+        // Keep the bar out of screenshots and recordings (SHOWTELL_CAPTURE_BAR=1 lets it in, for docs and tests).
+        if ProcessInfo.processInfo.environment["SHOWTELL_CAPTURE_BAR"] == nil { sharingType = .none }
         contentView = NSHostingView(rootView: OverlayView(model: model))
     }
 
@@ -82,18 +90,31 @@ struct OverlayView: View {
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(.secondary)
             }
             Spacer()
+            if model.showsSubmit {
+                Toggle(isOn: Binding(get: { model.submit }, set: { _ in model.onToggleSubmit?() })) {
+                    HStack(spacing: 4) {
+                        Text("Send").font(.system(size: 12, weight: .medium))
+                        Text(model.submitShortcut).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .help("Checked: press Enter after pasting. Unchecked: leave the text in Claude's input for you. Changes the default too.")
+            }
             Button { model.onShowSessions?() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.secondary)
                     Text(model.targetName.isEmpty ? "no session" : model.targetName)
                         .font(.system(size: 12, weight: .medium)).lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    if !model.targetShortcuts.isEmpty {
+                        Text(model.targetShortcuts).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(.white.opacity(0.08), in: Capsule())
             }
             .buttonStyle(.plain)
-            .help("Send this message to another session")
+            .help("Send this message to another session (\(model.targetShortcuts) moves through the list)")
         }
     }
 

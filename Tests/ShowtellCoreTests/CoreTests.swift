@@ -317,4 +317,15 @@ final class EventLog: @unchecked Sendable {
         let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
         #expect(old.cleanupModel == nil && old.cleanupOnSend == false && old.cleanupShortcut.label == "⌃⌥C")
     }
+
+    @Test func settingsKeepBarShortcuts() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.sendToggleShortcut.label == "⌃⌥S")
+        #expect(old.nextTargetShortcut.label == "⌃⌥↓" && old.previousTargetShortcut.label == "⌃⌥↑")
+        var s = Settings()
+        s.nextTargetShortcut = .chord(124, 0x1000, "→")
+        s.sendToggleShortcut = .tap("rightShift")
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s)
+    }
 }

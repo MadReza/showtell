@@ -26,6 +26,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private var startBinding: ShortcutBinding?
     private var cancelBinding: ShortcutBinding?
     private var cleanupBinding: ShortcutBinding?
+    /// The Send checkbox and session shortcuts, while recording or reviewing.
+    private var barBindings: [ShortcutBinding] = []
     private(set) lazy var cleaner = TextCleaner(storage: storage)
     /// The text before and after the last clean-up, so the shortcut can switch between them.
     private var beforeCleanup: String?
@@ -74,6 +76,7 @@ final class AppController: NSObject, NSMenuDelegate {
         registerMainHotKey()
         model.onUserEdit = { [weak self] text in self?.userEdited(text) }
         model.onShowSessions = { [weak self] in self?.showSessionsInBar() }
+        model.onToggleSubmit = { [weak self] in self?.toggleSendInBar() }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
         screenshotKeys.onEscape = { [weak self] in self?.screenshotOver() }
@@ -91,6 +94,15 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         center.addObserver(forName: .init("dev.showtell.settings"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.openSettings() }
+        }
+        center.addObserver(forName: .init("dev.showtell.submit"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.toggleSendInBar() }
+        }
+        center.addObserver(forName: .init("dev.showtell.next"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moveTarget(by: 1) }
+        }
+        center.addObserver(forName: .init("dev.showtell.previous"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moveTarget(by: -1) }
         }
         center.addObserver(forName: .init("dev.showtell.target"), object: nil, queue: .main) { [weak self] note in
             let target = note.object as? String
@@ -127,6 +139,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 self.startBinding?.refresh()
                 self.cancelBinding?.refresh()
                 self.cleanupBinding?.refresh()
+                self.barBindings.forEach { $0.refresh() }
                 self.settingsWindow.refresh()
                 if self.state == .recording, self.settings.hideDuringScreenshots { self.screenshotKeys.start() }
                 self.flash(.info("Accessibility allowed · \(self.hotKeyLabel) to start talking"), for: 2.5)
@@ -140,6 +153,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private var needsAccessibility: Bool {
         settings.startShortcut.tap != nil || settings.cancelShortcut.tap != nil || settings.hideDuringScreenshots
             || settings.insertAtCursor || (cleanupChoice != nil && settings.cleanupShortcut.tap != nil)
+            || [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut].contains { $0.tap != nil }
     }
 
     private func registerMainHotKey() {
@@ -157,7 +171,11 @@ final class AppController: NSObject, NSMenuDelegate {
         storage.save(settings)
         if new.startShortcut != old.startShortcut { registerMainHotKey() }
         if new.cancelShortcut != old.cancelShortcut, state == .recording || state == .reviewing { bindCancel() }
-        if state == .recording || state == .reviewing { bindCleanup() }
+        if state == .recording || state == .reviewing {
+            bindCleanup()
+            bindBarKeys()
+            updateBarControls()
+        }
         if new.cleanupModel != old.cleanupModel, let model = cleanupChoice { cleaner.prepare(model) }
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted { watchForTrust() }
     }
@@ -168,11 +186,13 @@ final class AppController: NSObject, NSMenuDelegate {
             startBinding?.stop()
             cancelBinding?.stop()
             cleanupBinding?.stop()
+            unbindBarKeys()
         } else {
             registerMainHotKey()
             if state == .recording || state == .reviewing {
                 bindCancel()
                 bindCleanup()
+                bindBarKeys()
             }
         }
     }
@@ -192,6 +212,72 @@ final class AppController: NSObject, NSMenuDelegate {
         cleanupBinding = ShortcutBinding(settings.cleanupShortcut, hotKeys: hotKeys) { [weak self] in
             self?.cleanupPressed()
         }
+    }
+
+    private func bindBarKeys() {
+        unbindBarKeys()
+        barBindings = [
+            ShortcutBinding(settings.sendToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleSendInBar() },
+            ShortcutBinding(settings.nextTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: 1) },
+            ShortcutBinding(settings.previousTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: -1) },
+        ]
+        for (binding, shortcut) in zip(barBindings, [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut])
+        where !binding.ok {
+            log.error("\(shortcut.label, privacy: .public) is taken by another app")
+        }
+    }
+
+    private func unbindBarKeys() {
+        barBindings.forEach { $0.stop() }
+        barBindings = []
+    }
+
+    /// The Send checkbox or its shortcut: this message presses Enter or not, and so do the next
+    /// ones (it is the "Second press sends" setting).
+    private func toggleSendInBar() {
+        guard state != .idle, !settings.insertAtCursor else { return }
+        settings.submitOnSecondPress.toggle()
+        storage.save(settings)
+        settingsWindow.update(settings)
+        updateBarControls()
+    }
+
+    /// The session shortcuts: this message, and the next ones, go to the next or previous entry of
+    /// the session list (the cursor first, as in the menu).
+    private func moveTarget(by step: Int) {
+        guard state != .idle else { return }
+        let agents = sessionsNow()
+        let count = agents.count + 1
+        let current = settings.insertAtCursor
+            ? 0 : settings.pinned.flatMap { p in agents.firstIndex { p.locate(in: [$0]) != nil } }.map { $0 + 1 }
+        let next = ((current ?? (step > 0 ? 0 : 1)) + step + count) % count
+        if next == 0 {
+            settings.insertAtCursor = true
+        } else {
+            settings.pinned = PinnedTarget(agent: agents[next - 1])
+            settings.insertAtCursor = false
+        }
+        storage.save(settings)
+        updateStatusTitle()
+        updateBarControls()
+    }
+
+    /// The Send checkbox, the destination and the hint, after any of them changed.
+    private func updateBarControls() {
+        model.submit = settings.submitOnSecondPress
+        model.showsSubmit = !settings.insertAtCursor
+        model.submitShortcut = settings.sendToggleShortcut.label
+        model.targetShortcuts = Self.pairLabel(settings.previousTargetShortcut, settings.nextTargetShortcut)
+        model.targetName = targetLabel
+        if state == .reviewing { model.hint = reviewHint() } else if state == .recording { refreshHint() }
+    }
+
+    /// "⌃⌥↑↓" for the usual pair, otherwise both shortcuts.
+    static func pairLabel(_ up: Shortcut, _ down: Shortcut) -> String {
+        if up.tap == nil, down.tap == nil, up.modifiers == down.modifiers, up.keyName == "↑", down.keyName == "↓" {
+            return Shortcut.describe(modifiers: up.modifiers) + "↑↓"
+        }
+        return "\(up.label) \(down.label)"
     }
 
     /// The model picked in Settings, if any.
@@ -222,16 +308,16 @@ final class AppController: NSObject, NSMenuDelegate {
         afterCleanup = nil
         recordingID = Self.stamp()
         recordingStart = Date()
-        model.targetName = targetLabel
         model.phase = .listening
         model.text = ""
         model.shots = []
         model.elapsed = 0
-        refreshHint()
+        updateBarControls()
         panel.present()
 
         bindCancel()
         bindCleanup()
+        bindBarKeys()
         if let model = cleanupChoice { cleaner.prepare(model) }
         clipboard.start()
         if settings.hideDuringScreenshots { screenshotKeys.start() }
@@ -418,12 +504,17 @@ final class AppController: NSObject, NSMenuDelegate {
     private func review(note: String?) {
         state = .reviewing
         model.phase = .info(note ?? "Tidied · check it, then send")
+        model.hint = reviewHint()
+        if cancelBinding == nil { bindCancel() }
+        if cleanupBinding == nil { bindCleanup() }
+        if barBindings.isEmpty { bindBarKeys() }
+    }
+
+    private func reviewHint() -> String {
         let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel"]
         if afterCleanup != nil { parts.append("\(settings.cleanupShortcut.label) switches to \(model.text == afterCleanup ? "your original" : "the tidied text")") }
-        model.hint = parts.joined(separator: "  ·  ")
-        if cancelBinding == nil { bindCancel() }
-        if cleanupBinding == nil { bindCleanup() }
+        return parts.joined(separator: "  ·  ")
     }
 
     /// Sends what the bar shows to the open session, or inserts it at the cursor.
@@ -433,6 +524,7 @@ final class AppController: NSObject, NSMenuDelegate {
         cancelBinding = nil
         cleanupBinding?.stop()
         cleanupBinding = nil
+        unbindBarKeys()
         // Replacements, then each of your terms in the case you wrote it ("Herdr" → "herdr").
         let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: repoPath).map { ($0.text, $0.text) }
         let pieces = composer.pieces().map { piece -> Piece in
@@ -518,6 +610,7 @@ final class AppController: NSObject, NSMenuDelegate {
         cancelBinding = nil
         cleanupBinding?.stop()
         cleanupBinding = nil
+        unbindBarKeys()
         panel.reappear()
     }
 
@@ -557,6 +650,8 @@ final class AppController: NSObject, NSMenuDelegate {
         model.hint = ""
         model.phase = phase
         model.targetName = targetLabel
+        model.showsSubmit = false
+        model.targetShortcuts = ""
         panel.present()
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -694,7 +789,7 @@ final class AppController: NSObject, NSMenuDelegate {
         if state == .idle {
             flash(.info("Opened \(agent.displayName) · \(hotKeyLabel) to start talking"), for: 2.5)
         } else {
-            model.targetName = agent.displayName  // this message goes to the new session
+            updateBarControls()  // this message goes to the new session
         }
     }
 
@@ -705,7 +800,7 @@ final class AppController: NSObject, NSMenuDelegate {
         if state == .idle {
             flash(.info("Inserting at the cursor · \(hotKeyLabel) to start talking"), for: 2.5)
         } else {
-            model.targetName = targetLabel
+            updateBarControls()
         }
     }
 
@@ -718,6 +813,7 @@ final class AppController: NSObject, NSMenuDelegate {
         var s = settings
         s.submitOnSecondPress.toggle()
         apply(s)
+        settingsWindow.update(settings)
     }
 
     @objc private func toggleHide() {

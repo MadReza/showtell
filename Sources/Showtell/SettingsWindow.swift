@@ -47,6 +47,9 @@ final class SettingsWindow {
     /// Permissions may have changed.
     func refresh() { model?.refresh() }
 
+    /// Settings changed outside the window (the bar's Send checkbox): show them, if it is open.
+    func update(_ settings: ShowtellCore.Settings) { model?.settings = settings }
+
     /// Permissions change in System Settings without telling us, so look again while the window is open.
     private func watchPermissions() {
         poll?.invalidate()
@@ -136,11 +139,17 @@ struct SettingsView: View {
             Section("Shortcuts") {
                 LabeledContent("Start and send") { ShortcutField(model: model, path: \.startShortcut) }
                 LabeledContent("Cancel a recording") { ShortcutField(model: model, path: \.cancelShortcut) }
+                LabeledContent("Send or just paste") { ShortcutField(model: model, path: \.sendToggleShortcut) }
+                LabeledContent("Next session") { ShortcutField(model: model, path: \.nextTargetShortcut) }
+                LabeledContent("Previous session") { ShortcutField(model: model, path: \.previousTargetShortcut) }
+                Text("The last three work while you talk: \(model.settings.sendToggleShortcut.label) ticks or unticks Send in the bar (Enter after pasting, or leave the text in Claude's input), and the session shortcuts move this message to the next or previous session, or to the cursor. Both choices stay for the next message.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("Click a shortcut, then press the new one: a key with modifiers such as ⌃⌥Space, or tap a single modifier such as the left ⌥. Esc on its own works for cancelling. Press nothing for 2 seconds to keep the old one.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Behaviour") {
                 Toggle("Second press sends (presses Enter)", isOn: $model.settings.submitOnSecondPress)
+                    .help("The same as the Send checkbox in the bar")
                 Toggle("Hide the bar while taking a screenshot (⌘⌃⇧3 / ⌘⌃⇧4)", isOn: $model.settings.hideDuringScreenshots)
                 Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
                 if let error = model.loginError {
