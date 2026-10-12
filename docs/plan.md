@@ -20,6 +20,7 @@ Updated 12 Oct 2026. Spec: [spec.md](spec.md).
 | 11 Oct | Send checkbox in the bar (⌃⌥S) and ⌃⌥↑/↓ to change session while talking; both change the default | User's request: fewer clicks; change your mind mid-message |
 | 11 Oct | Say where it goes: a session named at the start or end of a message, fuzzy match, with a pulse in the bar; sticks for the next messages once sent (switchable) | User's request; fixed patterns are instant and predictable, the tidy-up model would be slower and could misroute |
 | 12 Oct | Text copied while listening lands as `[📋 n]` where you were speaking, pasted exactly as copied; Screenshots and Copied text checkboxes in the bar (⌃⌥I / ⌃⌥T, recordable) and Settings, both on by default and permanent like Send; Showtell's own and password-manager clipboard writes are skipped | User's request: copying during a message means you want it in the chat |
+| 12 Oct | History window: every message sent is kept in `history.json` (text as the bar showed it, destination, outcome, its pictures in `shots/` and copied text); copy it, send it again to any session or the cursor through the normal delivery path, delete messages (their pictures go unless another message uses them), clear the history, empty the screenshots folder with a count and size first | User's request: see what went where, reuse a message, and keep the screenshots folder in check |
 
 ## Milestones
 

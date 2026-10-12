@@ -33,6 +33,10 @@ final class AppController: NSObject, NSMenuDelegate {
     private var beforeCleanup: String?
     private var afterCleanup: String?
     private lazy var settingsWindow = SettingsWindow(storage: storage)
+    private lazy var history = HistoryStore(storage: storage)
+    private lazy var historyWindow = makeHistoryWindow()
+    /// Picture files of messages still being delivered: emptying the screenshots folder keeps them.
+    private var filesSending: [String] = []
     private var trustTimer: Timer?
     private let panel = OverlayPanel()
     private var statusItem: NSStatusItem!
@@ -86,6 +90,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.onToggleSubmit = { [weak self] in self?.toggleSendInBar() }
         model.onToggleScreenshots = { [weak self] in self?.toggleScreenshotsInBar() }
         model.onToggleText = { [weak self] in self?.toggleCopiedTextInBar() }
+        model.onShowHistory = { [weak self] in self?.openHistory() }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         clipboard.onText = { [weak self] text in self?.textCopied(text) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
@@ -104,6 +109,9 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         center.addObserver(forName: .init("dev.showtell.settings"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.openSettings() }
+        }
+        center.addObserver(forName: .init("dev.showtell.history"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openHistory() }
         }
         center.addObserver(forName: .init("dev.showtell.submit"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.toggleSendInBar() }
@@ -656,6 +664,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         let rendered = composer.render()
         let id = recordingID
+        let shotURLs = composer.shotURLs, clipTexts = composer.clipTexts
         let toCursor = sendsToCursor, sendTo = sendTarget, routed = spokenRoute != nil
         defer { if state == .idle { spokenRoute = nil } }  // a new recording has its own
         if routed, settings.spokenRouteSticks {
@@ -670,11 +679,19 @@ final class AppController: NSObject, NSMenuDelegate {
         guard !pieces.isEmpty else { panel.dismiss(); return }
         saveLastMessage(rendered)
 
+        // Kept as sent: your replacements applied, markers in place.
+        func remember(_ destination: HistoryDestination, submitted: Bool) {
+            record(.sent(id: id, destination: destination, text: Vocabulary.applyReplacements(rendered, rules),
+                         shots: shotURLs, clips: clipTexts, submitted: submitted))
+        }
+
         if toCursor {
+            remember(.cursor, submitted: false)
             panel.dismiss()  // hand the keyboard back to the app with the cursor
             if await CursorInserter.insert(pieces) {
                 if state == .idle { flash(.sent, for: 1.0) }
             } else {
+                markFailed(id, "Accessibility not allowed; left on the clipboard")
                 flash(.info("Copied — press ⌘V to paste (allow Accessibility to paste for you)"), for: 5)
             }
             return
@@ -683,12 +700,17 @@ final class AppController: NSObject, NSMenuDelegate {
             flash(.error("Open a session first: click the menu-bar icon and pick a Claude session"))
             return
         }
+        let submit = settings.submitOnSecondPress
+        remember(.session(target), submitted: submit)
         model.phase = .sending
         pendingSends += 1
         await outbox.setEventHandler { [weak self] event in
             DispatchQueue.main.async { self?.deliveryEvent(event) }
         }
-        let result = await outbox.enqueue(pieces, to: target, submit: settings.submitOnSecondPress)
+        let files = shotURLs.values.map(\.lastPathComponent)
+        filesSending += files
+        let result = await outbox.enqueue(pieces, to: target, submit: submit)
+        doneSending(files)
         pendingSends -= 1
         switch result {
         case .success(let found):
@@ -700,6 +722,7 @@ final class AppController: NSObject, NSMenuDelegate {
             if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
         case .failure(let error):
             log.error("not sent: \(String(describing: error), privacy: .public)")
+            markFailed(id, "\(error)")
             let file = storage.root.appendingPathComponent("unsent-\(id).txt")
             try? rendered.write(to: file, atomically: true, encoding: .utf8)
             let message = "Not sent: \(error). Saved to \(file.lastPathComponent)"
@@ -710,6 +733,84 @@ final class AppController: NSObject, NSMenuDelegate {
             }
         }
     }
+
+    // MARK: History
+
+    private func record(_ entry: HistoryEntry) {
+        do { try history.record(entry) } catch { log.error("history not saved: \(error.localizedDescription, privacy: .public)") }
+        historyWindow.reload()
+    }
+
+    private func markFailed(_ id: String, _ reason: String) {
+        try? history.markFailed(id, reason)
+        historyWindow.reload()
+    }
+
+    private func makeHistoryWindow() -> HistoryWindow {
+        let window = HistoryWindow(store: history)
+        window.sessions = { [weak self] in self?.sessionsNow() ?? [] }
+        window.submits = { [weak self] in self?.settings.submitOnSecondPress ?? true }
+        window.resend = { [weak self] entry, destination in await self?.resend(entry, to: destination) }
+        window.filesInUse = { [weak self] in
+            guard let self else { return [] }
+            var files = Set(self.filesSending)
+            if self.state != .idle { files.formUnion(self.composer.shotURLs.values.map(\.lastPathComponent)) }
+            return files
+        }
+        return window
+    }
+
+    /// Sends a message from the history again, the way a new one is sent, and records it as new.
+    /// Returns why not, if it couldn't.
+    private func resend(_ entry: HistoryEntry, to destination: HistoryDestination) async -> String? {
+        let pieces = entry.pieces(shotsIn: storage.shotsURL)
+        guard !pieces.isEmpty else { return "Nothing left to send" }
+        let id = Self.stamp()
+        let submit = settings.submitOnSecondPress
+        var copy = entry
+        copy.id = id
+        copy.date = Date()
+        copy.destination = destination
+        copy.failure = nil
+        copy.submitted = destination != .cursor && submit
+        record(copy)
+        switch destination {
+        case .cursor:
+            NSApp.hide(nil)  // the cursor is in the app behind this window
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard await CursorInserter.insert(pieces) else {
+                markFailed(id, "Accessibility not allowed; left on the clipboard")
+                return "Copied — press ⌘V to paste (allow Accessibility to paste for you)"
+            }
+            if state == .idle { flash(.sent, for: 1.0) }
+            return nil
+        case .session(let target):
+            log.info("resend: \(pieces.count) pieces")
+            pendingSends += 1
+            await outbox.setEventHandler { [weak self] event in
+                DispatchQueue.main.async { self?.deliveryEvent(event) }
+            }
+            let files = entry.shots.map(\.file)
+            filesSending += files
+            let result = await outbox.enqueue(pieces, to: target, submit: submit)
+            doneSending(files)
+            pendingSends -= 1
+            switch result {
+            case .success:
+                if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
+                return nil
+            case .failure(let error):
+                markFailed(id, "\(error)")
+                return "Not sent: \(error)"
+            }
+        }
+    }
+
+    private func doneSending(_ files: [String]) {
+        for file in files { if let i = filesSending.firstIndex(of: file) { filesSending.remove(at: i) } }
+    }
+
+    @objc private func openHistory() { historyWindow.show() }
 
     private func deliveryEvent(_ event: DeliveryEvent) {
         guard state == .idle else { return }
@@ -849,6 +950,9 @@ final class AppController: NSObject, NSMenuDelegate {
         let prefs = item("Settings…", #selector(openSettings))
         prefs.keyEquivalent = ","
         menu.addItem(prefs)
+        let historyItem = item("History…", #selector(openHistory))
+        historyItem.keyEquivalent = "y"
+        menu.addItem(historyItem)
         menu.addItem(item("Show screenshots folder", #selector(showShots)))
         menu.addItem(.separator())
         menu.addItem(disabled(speechStatus))
@@ -991,7 +1095,8 @@ final class AppController: NSObject, NSMenuDelegate {
             onChange: { [weak self] new in self?.apply(new) },
             onRecording: { [weak self] recording in self?.pauseShortcuts(recording) },
             cleaner: cleaner,
-            onAskAccessibility: { [weak self] in self?.askAccessibility() })
+            onAskAccessibility: { [weak self] in self?.askAccessibility() },
+            onOpenHistory: { [weak self] in self?.openHistory() })
     }
     @objc private func showShots() { NSWorkspace.shared.open(storage.shotsURL) }
     @objc private func quit() { NSApp.terminate(nil) }

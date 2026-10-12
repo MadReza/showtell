@@ -73,6 +73,26 @@ Picking a downloadable model downloads it (to `~/Library/Application Support/Sho
 Everything runs on your Mac: Apple's on-device model, or llama.cpp inside Showtell. A loaded model
 is freed after five minutes without use.
 
+### History
+
+Menu → **History…** (⌘Y), the clock in the bar, or Settings → **History…** opens every message
+Showtell has sent, newest first, grouped by day: where it went (a session or the cursor), when,
+and whether it was delivered. Pick one to see the text exactly as the bar showed it when you sent
+it, with its `[📷 n]` and `[📋 n]` markers, the screenshots (click one to enlarge, copy it or show it
+in Finder) and each piece of copied text. Search finds words in messages, copied text and session
+names.
+
+- **Copy** puts the text, with its markers, on the clipboard; each piece of copied text has its own
+  Copy. A recording that is listening doesn't pick these up.
+- **Send again** sends the message, pictures included, to any open session or the cursor, the same
+  way a new message is sent (Enter follows the Send checkbox), and adds it to the history as new.
+- **Delete** (or ⌫ on a selection, several at once) removes messages and their screenshots, unless
+  another message still uses a picture.
+- **Clear → Clear history…** removes every message and the pictures they used. **Clear → Clear
+  screenshots folder…** says how many pictures and how much space, then deletes every picture in
+  `shots/`; messages keep their text and show where a picture was. A message being recorded or
+  delivered keeps its pictures.
+
 ## Settings
 
 Menu → **Settings…** (⌘,):
@@ -95,8 +115,8 @@ Menu → **Settings…** (⌘,):
 - **Tidy up text.** The model, whether every message is tidied, and the tidy-up shortcut.
 
 Files live in `~/Library/Application Support/Showtell/`: `settings.json`, `vocabulary.txt`,
-`replacements.txt`, `shots/`, `models/`, `last-message.txt`, and `unsent-*.txt` for any message that could
-not be delivered.
+`replacements.txt`, `shots/`, `models/`, `history.json` (every message sent, pointing at its pictures in
+`shots/`), `last-message.txt`, and `unsent-*.txt` for any message that could not be delivered.
 
 ## Permissions
 
@@ -130,7 +150,7 @@ Debug tools:
 ```sh
 swift run showtell-cli sessions                                   # Claude sessions in herdr
 swift run showtell-cli send <pane-id> --submit "look" @/tmp/a.png # deliver like the app does
-swift run showtell-cli toggle | cancel | tidy | settings          # drive the running app
+swift run showtell-cli toggle | cancel | tidy | settings | history # drive the running app
 swift run showtell-cli submit | next | previous                   # the Send checkbox, the session shortcuts
 swift run showtell-cli target cursor | <pane-id>                  # change where it sends
 .build/release/Showtell --transcribe speech.wav herdr Showtell    # speech self-test on a file
