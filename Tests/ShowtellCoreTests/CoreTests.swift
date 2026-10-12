@@ -20,9 +20,61 @@ import Testing
     @Test func imageOnly() {
         #expect(ShotMarker.pieces(from: "  [📷 2]  ", shots: shots) == [.image(shots[2]!)])
     }
+
+    @Test func copiedTextKeepsItsWhitespace() {
+        let code = "if  x {\n    run()\n}"
+        let pieces = ShotMarker.pieces(from: "use [📋 1] here   [📷 1] [📋 7]", shots: shots, clips: [1: code])
+        #expect(pieces == [.text("use "), .copied(code), .text(" here "), .image(shots[1]!)])
+    }
+}
+
+@Suite struct ClipboardTests {
+    @Test func textWinsOverAnImageOfIt() {
+        #expect(ClipboardChange.classify(types: ["public.utf8-plain-text", "public.tiff"], string: "A1 B1") == .text("A1 B1"))
+        #expect(ClipboardChange.classify(types: ["public.png"], string: nil) == .screenshot)
+        #expect(ClipboardChange.classify(types: ["public.utf8-plain-text"], string: "  \n") == .ignore)
+    }
+
+    @Test func ownWritesAndPasswordsAreIgnored() {
+        #expect(ClipboardChange.classify(types: ["public.utf8-plain-text", ClipboardChange.ownType], string: "sent") == .ignore)
+        #expect(ClipboardChange.classify(types: ["public.png", ClipboardChange.ownType], string: nil) == .ignore)
+        #expect(ClipboardChange.classify(types: ["public.utf8-plain-text", "org.nspasteboard.ConcealedType"], string: "hunter2") == .ignore)
+    }
 }
 
 @Suite struct ComposerTests {
+    @Test func placesCopiedTextByWordTiming() {
+        var c = Composer()
+        c.updateTranscript("run", newWordStartTimes: [0.0])
+        c.addClip("npm test -- --watch", at: 1.2)  // recogniser lags: only "run" known
+        c.updateTranscript("run this command and see", newWordStartTimes: [0.6, 0.95, 1.3, 1.7])
+        #expect(c.render() == "run this command [📋 1] and see")
+        #expect(c.pieces() == [.text("run this command "), .copied("npm test -- --watch"), .text(" and see")])
+    }
+
+    @Test func copiedTextGoesOneLagLaterWithoutTimings() {
+        var c = Composer(lag: 2)
+        c.updateTranscript("the", at: 1)
+        c.addClip("<button>", at: 1.5)
+        c.updateTranscript("the save button", at: 3.6)
+        c.updateTranscript("the save button does nothing", at: 5)
+        #expect(c.render() == "the save button [📋 1] does nothing")
+    }
+
+    @Test func screenshotsAndCopiesAreNumberedApart() {
+        var c = Composer()
+        c.updateTranscript("look", newWordStartTimes: [0.0])
+        c.addShot(URL(fileURLWithPath: "/a.png"), at: 0.5)
+        c.addClip("Error: 404", at: 1.5)
+        #expect(c.nextShotNumber == 2)
+        c.updateTranscript("look here then this error", newWordStartTimes: [0.6, 1.0, 1.2, 1.8])
+        c.finish(at: 2)
+        #expect(c.render() == "look [📷 1] here then this [📋 1] error")
+        #expect(c.pieces() == [
+            .text("look "), .image(URL(fileURLWithPath: "/a.png")), .text(" here then this "), .copied("Error: 404"), .text(" error"),
+        ])
+    }
+
     @Test func placesShotByWordTiming() {
         var c = Composer()
         c.updateTranscript("this", newWordStartTimes: [0.0])
@@ -298,6 +350,15 @@ final class EventLog: @unchecked Sendable {
     @Test func modelTextRoundTrip() {
         #expect(Cleanup.modelText("a [📷 1] b [📷 12]") == "a [Screenshot 1] b [Screenshot 12]")
         #expect(Cleanup.fromModelText("a [screenshot 1] b") == "a [📷 1] b")
+        #expect(Cleanup.modelText("a [📋 2] b [📷 1]") == "a [Copied 2] b [Screenshot 1]")
+        #expect(Cleanup.fromModelText("a [Copied 2] b [Screenshot 1]") == "a [📋 2] b [📷 1]")
+    }
+
+    @Test func refusesLostCopiedText() {
+        let original = "run this command [📋 1] and see what happens"
+        #expect(Cleanup.accept(original: original, cleaned: "Run this command and see what happens.", terms: []) == nil)
+        #expect(Cleanup.accept(original: original, cleaned: "Run this command [Copied 1] and see what happens.", terms: [])
+            == "Run this command [📋 1] and see what happens.")
     }
 
     @Test func splitAndJoinKeepScreenshotsInPlace() {
@@ -328,6 +389,19 @@ final class EventLog: @unchecked Sendable {
         s.sendToggleShortcut = .tap("rightShift")
         let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
         #expect(back == s)
+    }
+
+    @Test func settingsKeepCaptureToggles() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.captureScreenshots && old.captureCopiedText)
+        #expect(old.screenshotsToggleShortcut.label == "⌃⌥I" && old.copiedTextToggleShortcut.label == "⌃⌥T")
+        var s = Settings()
+        s.captureScreenshots = false
+        s.captureCopiedText = false
+        s.copiedTextToggleShortcut = .chord(8, 0x1000 | 0x200, "C")
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s && !back.captureScreenshots && !back.captureCopiedText)
+        #expect(back.copiedTextToggleShortcut.label == "⌃⇧C")
     }
 }
 

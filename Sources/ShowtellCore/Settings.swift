@@ -70,6 +70,13 @@ public struct Settings: Codable, Equatable, Sendable {
     public var spokenRouting = true
     /// A spoken destination becomes the open session for the next messages too (off: that message only).
     public var spokenRouteSticks = true
+    /// While recording: screenshots copied to the clipboard (⌘⌃⇧4) land in the message.
+    public var captureScreenshots = true
+    /// While recording: text you copy (⌘C, react-grab, …) lands in the message.
+    public var captureCopiedText = true
+    /// While recording: switch either capture on or off. Changes the default too.
+    public var screenshotsToggleShortcut = Shortcut.chord(34, 0x1000 | 0x800, "I")
+    public var copiedTextToggleShortcut = Shortcut.chord(17, 0x1000 | 0x800, "T")
 
     public init() {}
 
@@ -77,6 +84,7 @@ public struct Settings: Codable, Equatable, Sendable {
         case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned, insertAtCursor
         case cleanupModel, cleanupOnSend, cleanupShortcut
         case sendToggleShortcut, nextTargetShortcut, previousTargetShortcut, spokenRouting, spokenRouteSticks
+        case captureScreenshots, captureCopiedText, screenshotsToggleShortcut, copiedTextToggleShortcut
         case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
     }
 
@@ -104,6 +112,10 @@ public struct Settings: Codable, Equatable, Sendable {
         previousTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .previousTargetShortcut) ?? d.previousTargetShortcut
         spokenRouting = try c.decodeIfPresent(Bool.self, forKey: .spokenRouting) ?? d.spokenRouting
         spokenRouteSticks = try c.decodeIfPresent(Bool.self, forKey: .spokenRouteSticks) ?? d.spokenRouteSticks
+        captureScreenshots = try c.decodeIfPresent(Bool.self, forKey: .captureScreenshots) ?? d.captureScreenshots
+        captureCopiedText = try c.decodeIfPresent(Bool.self, forKey: .captureCopiedText) ?? d.captureCopiedText
+        screenshotsToggleShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .screenshotsToggleShortcut) ?? d.screenshotsToggleShortcut
+        copiedTextToggleShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .copiedTextToggleShortcut) ?? d.copiedTextToggleShortcut
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -122,6 +134,10 @@ public struct Settings: Codable, Equatable, Sendable {
         try c.encode(previousTargetShortcut, forKey: .previousTargetShortcut)
         try c.encode(spokenRouting, forKey: .spokenRouting)
         try c.encode(spokenRouteSticks, forKey: .spokenRouteSticks)
+        try c.encode(captureScreenshots, forKey: .captureScreenshots)
+        try c.encode(captureCopiedText, forKey: .captureCopiedText)
+        try c.encode(screenshotsToggleShortcut, forKey: .screenshotsToggleShortcut)
+        try c.encode(copiedTextToggleShortcut, forKey: .copiedTextToggleShortcut)
     }
 }
 

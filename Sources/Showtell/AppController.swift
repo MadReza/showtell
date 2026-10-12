@@ -84,7 +84,10 @@ final class AppController: NSObject, NSMenuDelegate {
         model.onUserEdit = { [weak self] text in self?.userEdited(text) }
         model.onShowSessions = { [weak self] in self?.showSessionsInBar() }
         model.onToggleSubmit = { [weak self] in self?.toggleSendInBar() }
+        model.onToggleScreenshots = { [weak self] in self?.toggleScreenshotsInBar() }
+        model.onToggleText = { [weak self] in self?.toggleCopiedTextInBar() }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
+        clipboard.onText = { [weak self] text in self?.textCopied(text) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
         screenshotKeys.onEscape = { [weak self] in self?.screenshotOver() }
 
@@ -148,7 +151,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 self.cleanupBinding?.refresh()
                 self.barBindings.forEach { $0.refresh() }
                 self.settingsWindow.refresh()
-                if self.state == .recording, self.settings.hideDuringScreenshots { self.screenshotKeys.start() }
+                self.updateScreenshotKeys()
                 self.flash(.info("Accessibility allowed · \(self.hotKeyLabel) to start talking"), for: 2.5)
             }
         }
@@ -160,7 +163,13 @@ final class AppController: NSObject, NSMenuDelegate {
     private var needsAccessibility: Bool {
         settings.startShortcut.tap != nil || settings.cancelShortcut.tap != nil || settings.hideDuringScreenshots
             || settings.insertAtCursor || (cleanupChoice != nil && settings.cleanupShortcut.tap != nil)
-            || [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut].contains { $0.tap != nil }
+            || barShortcuts.contains { $0.tap != nil }
+    }
+
+    /// Listened for only while recording or reviewing, in this order.
+    private var barShortcuts: [Shortcut] {
+        [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut,
+         settings.screenshotsToggleShortcut, settings.copiedTextToggleShortcut]
     }
 
     private func registerMainHotKey() {
@@ -183,6 +192,7 @@ final class AppController: NSObject, NSMenuDelegate {
             bindBarKeys()
             updateBarControls()
         }
+        updateScreenshotKeys()
         if new.cleanupModel != old.cleanupModel, let model = cleanupChoice { cleaner.prepare(model) }
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted { watchForTrust() }
     }
@@ -227,9 +237,10 @@ final class AppController: NSObject, NSMenuDelegate {
             ShortcutBinding(settings.sendToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleSendInBar() },
             ShortcutBinding(settings.nextTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: 1) },
             ShortcutBinding(settings.previousTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: -1) },
+            ShortcutBinding(settings.screenshotsToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleScreenshotsInBar() },
+            ShortcutBinding(settings.copiedTextToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleCopiedTextInBar() },
         ]
-        for (binding, shortcut) in zip(barBindings, [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut])
-        where !binding.ok {
+        for (binding, shortcut) in zip(barBindings, barShortcuts) where !binding.ok {
             log.error("\(shortcut.label, privacy: .public) is taken by another app")
         }
     }
@@ -247,6 +258,38 @@ final class AppController: NSObject, NSMenuDelegate {
         storage.save(settings)
         settingsWindow.update(settings)
         updateBarControls()
+    }
+
+    /// The Screenshots checkbox or its shortcut: screenshots copied while listening are added, or
+    /// not, from now on (a permanent change, like Send).
+    private func toggleScreenshotsInBar() {
+        guard state != .idle else { return }
+        settings.captureScreenshots.toggle()
+        storage.save(settings)
+        settingsWindow.update(settings)
+        updateScreenshotKeys()
+        updateBarControls()
+    }
+
+    /// The Copied text checkbox or its shortcut: text copied while listening is added, or not.
+    private func toggleCopiedTextInBar() {
+        guard state != .idle else { return }
+        settings.captureCopiedText.toggle()
+        storage.save(settings)
+        settingsWindow.update(settings)
+        updateBarControls()
+    }
+
+    /// The bar hides on ⌘⌃⇧3/4 only while recording, and only if those screenshots are wanted.
+    private func updateScreenshotKeys() {
+        if state == .recording, settings.hideDuringScreenshots, settings.captureScreenshots {
+            screenshotKeys.start()
+        } else {
+            screenshotKeys.stop()
+            reappearWork?.cancel()
+            panel.reappear()
+            if state == .recording, cancelBinding == nil { bindCancel() }
+        }
     }
 
     /// The session shortcuts: this message, and the next ones, go to the next or previous entry of
@@ -276,6 +319,11 @@ final class AppController: NSObject, NSMenuDelegate {
         model.showsSubmit = !sendsToCursor
         model.routeSpoken = spokenRoute != nil
         model.submitShortcut = settings.sendToggleShortcut.label
+        model.showsCapture = state == .recording || state == .reviewing
+        model.captureScreenshots = settings.captureScreenshots
+        model.captureText = settings.captureCopiedText
+        model.screenshotsShortcut = settings.screenshotsToggleShortcut.label
+        model.textShortcut = settings.copiedTextToggleShortcut.label
         model.targetShortcuts = Self.pairLabel(settings.previousTargetShortcut, settings.nextTargetShortcut)
         model.targetName = targetLabel
         if state == .reviewing { model.hint = reviewHint() } else if state == .recording { refreshHint() }
@@ -368,6 +416,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.phase = .listening
         model.text = ""
         model.shots = []
+        model.clips = []
         model.elapsed = 0
         updateBarControls()
         panel.present()
@@ -377,7 +426,7 @@ final class AppController: NSObject, NSMenuDelegate {
         bindBarKeys()
         if let model = cleanupChoice { cleaner.prepare(model) }
         clipboard.start()
-        if settings.hideDuringScreenshots { screenshotKeys.start() }
+        updateScreenshotKeys()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.model.elapsed = Date().timeIntervalSince(self?.recordingStart ?? Date()) }
         }
@@ -420,21 +469,35 @@ final class AppController: NSObject, NSMenuDelegate {
         model.text = text
     }
 
+    /// Seconds into the recording, on the clock the transcript's word times use. The speech clock
+    /// restarts when the microphone starts; until then use wall time.
+    private var recordingTime: Double {
+        speechListening ? speech.captured : Date().timeIntervalSince(recordingStart)
+    }
+
     private func screenshotArrived(_ png: Data) {
         guard state == .recording else { return }
-        reappearWork?.cancel()
-        // The speech clock restarts when the microphone starts; until then use wall time.
-        let time = speechListening ? speech.captured : Date().timeIntervalSince(recordingStart)
-        let number = composer.shots.count + 1
+        defer { screenshotOver() }
+        guard settings.captureScreenshots else { return }
+        let number = composer.nextShotNumber
         let url = storage.newShotURL(recording: recordingID, number: number)
         do { try png.write(to: url) } catch {
             model.phase = .error("Couldn't save screenshot: \(error.localizedDescription)")
             return
         }
-        composer.addShot(url, at: time)
+        composer.addShot(url, at: recordingTime)
         if let image = NSImage(data: png) { model.shots.append((number, image)) }
         model.text = composer.render()
-        screenshotOver()
+    }
+
+    /// Text copied while listening goes in at the word you were saying, as `[📋 n]`. Not a copy
+    /// made in the bar itself (cutting and pasting a marker to move it) or in Settings.
+    private func textCopied(_ text: String) {
+        guard state == .recording, settings.captureCopiedText, NSApp.keyWindow == nil else { return }
+        let number = composer.addClip(text, at: recordingTime)
+        model.clips.append((number, text))
+        model.text = composer.render()
+        log.info("copied text added: \(text.count) characters")
     }
 
     /// ⌘⌃⇧3/4 copy to the clipboard: hide until the shot arrives. The file variants (no ⌃) need no
@@ -701,7 +764,9 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private func refreshHint() {
         let send = sendsToCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
-        var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel", "⌘⌃⇧4 adds a screenshot"]
+        var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel"]
+        if settings.captureScreenshots { parts.append("⌘⌃⇧4 adds a screenshot") }
+        if settings.captureCopiedText { parts.append("⌘C adds what you copy") }
         if cleanupChoice != nil { parts.insert("\(settings.cleanupShortcut.label) to tidy up", at: 2) }
         switch speechState {
         case .loading(let s): parts.insert(s, at: 0)
@@ -716,11 +781,13 @@ final class AppController: NSObject, NSMenuDelegate {
         if phase != .sent {
             model.text = ""
             model.shots = []
+            model.clips = []
         }
         model.hint = ""
         model.phase = phase
         model.targetName = targetLabel
         model.showsSubmit = false
+        model.showsCapture = false
         model.targetShortcuts = ""
         model.routeNote = ""
         panel.present()

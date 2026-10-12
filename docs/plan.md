@@ -1,6 +1,6 @@
 # Showtell plan
 
-Updated 11 Oct 2026. Spec: [spec.md](spec.md).
+Updated 12 Oct 2026. Spec: [spec.md](spec.md).
 
 ## Decisions so far
 
@@ -19,6 +19,7 @@ Updated 11 Oct 2026. Spec: [spec.md](spec.md).
 | 11 Oct | Optional tidy-up model: Apple Intelligence, Qwen 2.5 1.5B or Qwen 3 4B (llama.cpp), picked in Settings | User's request: better sentences, not a rewrite; the user chooses, with pros and cons shown |
 | 11 Oct | Send checkbox in the bar (⌃⌥S) and ⌃⌥↑/↓ to change session while talking; both change the default | User's request: fewer clicks; change your mind mid-message |
 | 11 Oct | Say where it goes: a session named at the start or end of a message, fuzzy match, with a pulse in the bar; sticks for the next messages once sent (switchable) | User's request; fixed patterns are instant and predictable, the tidy-up model would be slower and could misroute |
+| 12 Oct | Text copied while listening lands as `[📋 n]` where you were speaking, pasted exactly as copied; Screenshots and Copied text checkboxes in the bar (⌃⌥I / ⌃⌥T, recordable) and Settings, both on by default and permanent like Send; Showtell's own and password-manager clipboard writes are skipped | User's request: copying during a message means you want it in the chat |
 
 ## Milestones
 
@@ -38,8 +39,9 @@ Updated 11 Oct 2026. Spec: [spec.md](spec.md).
    verified with throwaway Claude sessions in both (two images, answered in order).
 5. **Region capture and OCR terms:** optional ScreenCaptureKit capture; feed OCR words to the boost.
 6. **Orchestration:** one Claude session receiving all inputs and dispatching to others.
-7. **To do: page elements while talking.** Copy an element with react-grab (or agentation) mid-sentence
-   and it lands in the message where you were speaking; later maybe an Accessibility picker.
+7. **Page elements while talking.** ✓ (12 Oct) The clipboard bridge now carries copied text, so an
+   element copied with react-grab (or agentation) mid-sentence lands as `[📋 n]` where you were
+   speaking; needs a live check with react-grab. Later maybe an Accessibility picker.
    Exploration and options: [element-picker.md](reports/element-picker.md).
 
 ## Known risks
