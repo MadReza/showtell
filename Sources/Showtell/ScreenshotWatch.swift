@@ -1,10 +1,15 @@
 import AppKit
+import ShowtellCore
 
-/// Watches the clipboard for new images (what ⌘⌃⇧4 and friends put there) and saves each as a PNG.
+/// Watches the clipboard for new images (what ⌘⌃⇧4 and friends put there) and copied text.
+/// Showtell's own writes carry `ClipboardChange.ownType` and are skipped.
 final class ClipboardWatcher {
     private var timer: Timer?
     private var lastChange = NSPasteboard.general.changeCount
     var onImage: ((Data) -> Void)?
+    var onText: ((String) -> Void)?
+
+    static var ownType: NSPasteboard.PasteboardType { NSPasteboard.PasteboardType(ClipboardChange.ownType) }
 
     func start() {
         lastChange = NSPasteboard.general.changeCount
@@ -21,8 +26,15 @@ final class ClipboardWatcher {
         let pb = NSPasteboard.general
         guard pb.changeCount != lastChange else { return }
         lastChange = pb.changeCount
-        guard let png = Self.pngData(from: pb) else { return }
-        onImage?(png)
+        let types = (pb.types ?? []).map(\.rawValue)
+        switch ClipboardChange.classify(types: types, string: pb.string(forType: .string)) {
+        case .ignore:
+            break
+        case .screenshot:
+            if let png = Self.pngData(from: pb) { onImage?(png) }
+        case .text(let text):
+            onText?(text)
+        }
     }
 
     static func pngData(from pb: NSPasteboard) -> Data? {
