@@ -106,7 +106,10 @@ swift run showtell-cli toggle | cancel | tidy | settings          # drive the ru
 swift run showtell-cli target cursor | <pane-id>                  # change where it sends
 .build/release/Showtell --transcribe speech.wav herdr Showtell    # speech self-test on a file
 .build/release/Showtell --tidy apple "so um the build fails" herdr # tidy-up self-test (apple, qwen2.5-1.5b, qwen3-4b)
+/usr/bin/log stream --info --predicate 'subsystem == "dev.showtell"'  # what happened to each message
 ```
+
+The log shows states and word counts (heard, tidied, pieces sent), never your words.
 
 ## How delivery works
 
