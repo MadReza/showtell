@@ -93,6 +93,21 @@ names.
   `shots/`; messages keep their text and show where a picture was. A message being recorded or
   delivered keeps its pictures.
 
+### Screenshot names
+
+Pictures stay in one flat `shots/` folder; sort it by name and each message's pictures sit
+together. Once a message is sent, its pictures are named for when, where and what you were saying:
+
+`2026-10-12 14.03 showtell 📷2 — the header is cut off here.png`
+
+the time the message was started, the session's name (or `cursor`), the picture's number, then
+about six words you said just before its marker (left off when you said nothing before it). A
+message you cancelled or that couldn't be delivered says `unsent` instead of a destination; the
+History window still shows where it was meant to go. A picture whose marker you deleted is
+`unsent` too. Each picture's Finder comment (Get Info) holds the destination and the whole
+message, so Spotlight finds it by anything you said. Names never contain `/` or `:`, stop around
+120 characters, and get ` (2)` when taken. Pictures saved before this naming keep their old names.
+
 ## Settings
 
 Menu → **Settings…** (⌘,):
