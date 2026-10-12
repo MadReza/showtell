@@ -118,7 +118,7 @@ public actor Outbox {
 
         for piece in pieces {
             switch piece {
-            case .text(let s):
+            case .text(let s), .copied(let s):
                 try await transport.paste(s, pane: current.paneID)
                 pastedSomething = true
                 await sleep(timing.afterText)

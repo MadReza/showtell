@@ -146,7 +146,9 @@ struct SettingsView: View {
                 LabeledContent("Send or just paste") { ShortcutField(model: model, path: \.sendToggleShortcut) }
                 LabeledContent("Next session") { ShortcutField(model: model, path: \.nextTargetShortcut) }
                 LabeledContent("Previous session") { ShortcutField(model: model, path: \.previousTargetShortcut) }
-                Text("The last three work while you talk: \(model.settings.sendToggleShortcut.label) ticks or unticks Send in the bar (Enter after pasting, or leave the text in Claude's input), and the session shortcuts move this message to the next or previous session, or to the cursor. Both choices stay for the next message.")
+                LabeledContent("Screenshots on or off") { ShortcutField(model: model, path: \.screenshotsToggleShortcut) }
+                LabeledContent("Copied text on or off") { ShortcutField(model: model, path: \.copiedTextToggleShortcut) }
+                Text("The last five work while you talk: \(model.settings.sendToggleShortcut.label) ticks or unticks Send in the bar (Enter after pasting, or leave the text in Claude's input), the session shortcuts move this message to the next or previous session, or to the cursor, and the last two tick or untick Screenshots and Copied text in the bar. Every choice stays for the next message.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Click a shortcut, then press the new one: a key with modifiers such as ⌃⌥Space, or tap a single modifier such as the left ⌥. Esc on its own works for cancelling. Press nothing for 2 seconds to keep the old one.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -154,7 +156,12 @@ struct SettingsView: View {
             Section("Behaviour") {
                 Toggle("Second press sends (presses Enter)", isOn: $model.settings.submitOnSecondPress)
                     .help("The same as the Send checkbox in the bar")
+                Toggle("Add screenshots I copy while talking (⌘⌃⇧4)", isOn: $model.settings.captureScreenshots)
+                    .help("The same as the Screenshots checkbox in the bar")
+                Toggle("Add text I copy while talking (⌘C)", isOn: $model.settings.captureCopiedText)
+                    .help("The same as the Copied text checkbox in the bar. Copies from password managers are never added.")
                 Toggle("Hide the bar while taking a screenshot (⌘⌃⇧3 / ⌘⌃⇧4)", isOn: $model.settings.hideDuringScreenshots)
+                    .disabled(!model.settings.captureScreenshots)
                 Toggle("Open at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
                 if let error = model.loginError {
                     Text(error).font(.caption).foregroundStyle(.orange)
