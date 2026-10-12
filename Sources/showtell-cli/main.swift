@@ -11,9 +11,9 @@ usage:
   showtell-cli sessions
   showtell-cli send <pane-id|session-id> [--submit] <piece>...
       a piece is text, or @/absolute/path.png for a screenshot
-  showtell-cli toggle | cancel | tidy | settings | submit | next | previous
+  showtell-cli toggle | cancel | tidy | settings | history | submit | next | previous
       same as pressing the shortcut / the cancel shortcut / the tidy-up shortcut / choosing Settings…
-      / the Send checkbox / the next or previous session shortcut, in the running app
+      or History… / the Send checkbox / the next or previous session shortcut, in the running app
   showtell-cli target cursor | <pane-id>
       where the running app sends: insert at the cursor, or a herdr pane
 """
@@ -63,7 +63,7 @@ case "send":
         }
     } catch { fail("\(error)") }
 
-case "toggle", "cancel", "tidy", "settings", "submit", "next", "previous":
+case "toggle", "cancel", "tidy", "settings", "history", "submit", "next", "previous":
     DistributedNotificationCenter.default().postNotificationName(
         .init("dev.showtell.\(args[0])"), object: nil, userInfo: nil, deliverImmediately: true)
 
