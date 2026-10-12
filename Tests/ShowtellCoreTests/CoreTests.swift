@@ -540,4 +540,91 @@ final class EventLog: @unchecked Sendable {
         #expect(store.load()[0].text == "see [📷 1]")
         #expect(store.load()[0].pieces(shotsIn: store.shotsURL) == [.text("see")])
     }
+
+    @Test func renamedPicturesFollowInEveryEntry() throws {
+        let store = try makeStore()
+        let shot = HistoryEntry.Shot(number: 1, file: "a-01.png")
+        try store.record(HistoryEntry(id: "a", destination: .cursor, text: "[📷 1]", shots: [shot], submitted: false))
+        try store.record(HistoryEntry(id: "b", destination: .cursor, text: "[📷 1] [📷 2]",
+                                      shots: [shot, .init(number: 2, file: "other.png")], submitted: false))
+        try store.renameShots(["a-01.png": "new name.png"])
+        #expect(store.load().map { $0.shots.map(\.file) } == [["new name.png", "other.png"], ["new name.png"]])
+    }
+}
+
+@Suite struct ShotNameTests {
+    let date = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 12, hour: 14, minute: 3))!
+
+    func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("showtell-shots-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @Test func buildsTheName() {
+        #expect(ShotNames.name(date: date, destination: "showtell", number: 2, words: "the header is cut off")
+            == "2026-10-12 14.03 showtell 📷2 — the header is cut off")
+        #expect(ShotNames.name(date: date, destination: "cursor", number: 1, words: nil) == "2026-10-12 14.03 cursor 📷1")
+        #expect(ShotNames.name(date: date, destination: "unsent", number: 3, words: "  ") == "2026-10-12 14.03 unsent 📷3")
+    }
+
+    @Test func capsTheLength() {
+        let long = String(repeating: "word ", count: 60)
+        let name = ShotNames.name(date: date, destination: "showtell", number: 1, words: long)
+        #expect(name.count <= ShotNames.maxLength)
+        #expect(name.hasSuffix("…"))
+        #expect(name.hasPrefix("2026-10-12 14.03 showtell 📷1 — word word"))
+        let longSession = ShotNames.name(date: date, destination: String(repeating: "x", count: 200), number: 1, words: "hi")
+        #expect(longSession.count <= ShotNames.maxLength)
+    }
+
+    @Test func sanitises() {
+        #expect(ShotNames.sanitize("api/v2: the\tbad\n\nlogin  ") == "api-v2- the bad login")
+        #expect(ShotNames.sanitize("..hidden") == "hidden")
+        #expect(ShotNames.sanitize("a\u{0}b") == "a b")
+    }
+
+    @Test func picksWordsBeforeTheMarker() {
+        let text = "So when I open [📋 1] the settings page and click save, here [📷 1] it breaks. [📷 2] And again [📷 3]"
+        #expect(ShotNames.words(before: 1, in: text) == "settings page and click save, here")
+        #expect(ShotNames.words(before: 2, in: text) == "and click save, here it breaks")
+        #expect(ShotNames.words(before: 3, in: text) == "save, here it breaks. And again")
+        #expect(ShotNames.words(before: 4, in: text) == nil)
+        #expect(ShotNames.words(before: 1, in: "[📷 1] first thing") == nil)
+        #expect(ShotNames.words(before: 2, in: "[📷 1] [📷 2] then") == nil)
+        #expect(ShotNames.words(before: 1, in: "why? [📷 1]") == "why?")
+    }
+
+    @Test func makesNamesUnique() {
+        let taken: Set<String> = ["a.png", "a (2).png"]
+        #expect(ShotNames.unique("a", ext: "png", taken: taken.contains) == "a (3).png")
+        #expect(ShotNames.unique("b", ext: "png", taken: taken.contains) == "b.png")
+    }
+
+    @Test func renamesFilesAndSetsTheComment() throws {
+        let dir = try folder()
+        let one = dir.appendingPathComponent("20261012-140300-000-01.png")
+        let two = dir.appendingPathComponent("20261012-140300-000-02.png")
+        let gone = dir.appendingPathComponent("20261012-140300-000-03.png")
+        let old = dir.appendingPathComponent("20250101-000000-000-01.png")
+        for url in [one, two, old] { try Data([1]).write(to: url) }
+        // Someone else's picture already has the first name.
+        try Data([2]).write(to: dir.appendingPathComponent("2026-10-12 14.03 showtell 📷1 — the login- button.png"))
+
+        let text = "the login: button [📷 1] looks wrong"
+        let renamed = ShotNames.rename([1: one, 2: two, 3: gone], text: text, destination: "showtell", delivered: true, date: date)
+        let first = try #require(renamed[1])
+        #expect(first.lastPathComponent == "2026-10-12 14.03 showtell 📷1 — the login- button (2).png")
+        #expect(renamed[2]?.lastPathComponent == "2026-10-12 14.03 unsent 📷2.png")  // its marker was deleted
+        #expect(renamed[3] == nil)
+        #expect(ShotNames.finderComment(of: first) == "Showtell → showtell\n\n" + text)
+        let fm = FileManager.default
+        #expect(!fm.fileExists(atPath: one.path) && fm.fileExists(atPath: old.path))
+
+        // Delivery failed afterwards: named again as unsent, keeping the words.
+        let unsent = ShotNames.rename(renamed, text: text, destination: "showtell", delivered: false, date: date)
+        #expect(unsent[1]?.lastPathComponent == "2026-10-12 14.03 unsent 📷1 — the login- button.png")
+        #expect(unsent[2] == renamed[2])
+        #expect(ShotNames.finderComment(of: unsent[1]!) == "Showtell, unsent (for showtell)\n\n" + text)
+    }
 }
