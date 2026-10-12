@@ -595,6 +595,13 @@ final class AppController: NSObject, NSMenuDelegate {
         let id = recordingID
         let toCursor = sendsToCursor, sendTo = sendTarget, routed = spokenRoute != nil
         defer { if state == .idle { spokenRoute = nil } }  // a new recording has its own
+        if routed, settings.spokenRouteSticks {
+            // The named session becomes the open one, as if picked from the menu.
+            settings.insertAtCursor = toCursor
+            if !toCursor, let sendTo { settings.pinned = sendTo }
+            storage.save(settings)
+            updateStatusTitle()
+        }
         state = .idle  // you can start the next message while this one is delivered
         log.info("deliver: \(pieces.count) pieces")
         guard !pieces.isEmpty else { panel.dismiss(); return }
@@ -804,7 +811,7 @@ final class AppController: NSObject, NSMenuDelegate {
         if settings.spokenRouting {
             let name = agents.first?.folderName ?? "showtell"
             menu.addItem(.separator())
-            menu.addItem(disabled("Or say it, for one message:"))
+            menu.addItem(disabled(settings.spokenRouteSticks ? "Or say it:" : "Or say it, for one message:"))
             menu.addItem(disabled("   “For the \(name) session, …”   “Send to \(name): …”"))
             menu.addItem(disabled("   “… this should go to \(name)”   “… paste it at the cursor”"))
         }

@@ -18,7 +18,7 @@ Updated 11 Oct 2026. Spec: [spec.md](spec.md).
 | 11 Oct | Sign with a local self-signed identity | Ad-hoc signatures lost permissions on every rebuild |
 | 11 Oct | Optional tidy-up model: Apple Intelligence, Qwen 2.5 1.5B or Qwen 3 4B (llama.cpp), picked in Settings | User's request: better sentences, not a rewrite; the user chooses, with pros and cons shown |
 | 11 Oct | Send checkbox in the bar (⌃⌥S) and ⌃⌥↑/↓ to change session while talking; both change the default | User's request: fewer clicks; change your mind mid-message |
-| 11 Oct | Say where it goes: a session named at the start or end of a message, fuzzy match, for that message only, with a pulse in the bar | User's request; fixed patterns are instant and predictable, the tidy-up model would be slower and could misroute |
+| 11 Oct | Say where it goes: a session named at the start or end of a message, fuzzy match, with a pulse in the bar; sticks for the next messages once sent (switchable) | User's request; fixed patterns are instant and predictable, the tidy-up model would be slower and could misroute |
 
 ## Milestones
 

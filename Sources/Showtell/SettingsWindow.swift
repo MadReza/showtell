@@ -165,6 +165,8 @@ struct SettingsView: View {
             }
             Section("Say where it goes") {
                 Toggle("Send to a session I name at the start or end of a message", isOn: $model.settings.spokenRouting)
+                Toggle("Keep sending there afterwards", isOn: $model.settings.spokenRouteSticks)
+                    .disabled(!model.settings.spokenRouting)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("At the start").font(.caption.weight(.semibold))
                     Text("“For the showtell session, …”   “Showtell session: …”   “Send to showtell, …”   “At the cursor: …”")
@@ -173,7 +175,7 @@ struct SettingsView: View {
                 }
                 .font(.caption).foregroundStyle(.secondary)
                 .opacity(model.settings.spokenRouting ? 1 : 0.5)
-                Text("Use the session's folder or title; close-sounding names count. The phrase is taken out of the message, the bar switches with a pulse as soon as it hears it, and only that message goes there. A name in the middle of a sentence never switches; if a name matches no session or several, nothing changes. A click or \(Self.pair(model.settings)) in the bar overrides it.")
+                Text("Use the session's folder or title; close-sounding names count. The phrase is taken out of the message and the bar switches with a pulse as soon as it hears it. Once the message is sent, that session stays open for the next ones, unless \"Keep sending there\" is off. A name in the middle of a sentence never switches; if a name matches no session or several, nothing changes. A click or \(Self.pair(model.settings)) in the bar overrides it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             tidySection

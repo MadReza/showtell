@@ -43,8 +43,9 @@ Name a session at the start or the end of a message and that message goes there 
 
 Use the session's folder or title; close-sounding names count (“Chotel” finds showtell). The
 phrase is taken out of the message. The session name in the bar pulses and shows a microphone as
-soon as the phrase is heard, with what was heard beside it. Only that message goes there; the open
-session stays. A name in the middle of a sentence never switches, and a name that matches no
+soon as the phrase is heard, with what was heard beside it. Once the message is sent, that session
+stays open for the next messages, like picking it in the menu (Settings → "Keep sending there
+afterwards" off: that message only). A name in the middle of a sentence never switches, and a name that matches no
 session or several changes nothing (the bar says why). A click or ⌃⌥↑/↓ overrides it. The
 session menus and Settings → Say where it goes list the phrases; switch it off there.
 
