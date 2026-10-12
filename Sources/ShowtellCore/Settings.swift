@@ -68,13 +68,15 @@ public struct Settings: Codable, Equatable, Sendable {
     public var previousTargetShortcut = Shortcut.chord(126, 0x1000 | 0x800, "↑")
     /// "For the showtell session, …" or "… send this to showtell" sends that message there.
     public var spokenRouting = true
+    /// A spoken destination becomes the open session for the next messages too (off: that message only).
+    public var spokenRouteSticks = true
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned, insertAtCursor
         case cleanupModel, cleanupOnSend, cleanupShortcut
-        case sendToggleShortcut, nextTargetShortcut, previousTargetShortcut, spokenRouting
+        case sendToggleShortcut, nextTargetShortcut, previousTargetShortcut, spokenRouting, spokenRouteSticks
         case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
     }
 
@@ -101,6 +103,7 @@ public struct Settings: Codable, Equatable, Sendable {
         nextTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .nextTargetShortcut) ?? d.nextTargetShortcut
         previousTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .previousTargetShortcut) ?? d.previousTargetShortcut
         spokenRouting = try c.decodeIfPresent(Bool.self, forKey: .spokenRouting) ?? d.spokenRouting
+        spokenRouteSticks = try c.decodeIfPresent(Bool.self, forKey: .spokenRouteSticks) ?? d.spokenRouteSticks
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -118,6 +121,7 @@ public struct Settings: Codable, Equatable, Sendable {
         try c.encode(nextTargetShortcut, forKey: .nextTargetShortcut)
         try c.encode(previousTargetShortcut, forKey: .previousTargetShortcut)
         try c.encode(spokenRouting, forKey: .spokenRouting)
+        try c.encode(spokenRouteSticks, forKey: .spokenRouteSticks)
     }
 }
 
