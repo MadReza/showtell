@@ -46,12 +46,37 @@ final class OverlayModel: ObservableObject {
     var onToggleScreenshots: (() -> Void)?
     var onToggleText: (() -> Void)?
     var onShowHistory: (() -> Void)?
+    /// The transcript's laid-out height changed; the panel decides whether to animate it.
+    var onTextHeight: ((CGFloat) -> Void)?
+}
+
+/// Sizes the window to the bar. While the bar animates smaller, the window keeps `holdHeight`
+/// so the bar isn't cut off; it is transparent around the bar.
+final class BarHostingView: NSHostingView<OverlayView> {
+    var holdHeight: CGFloat = 0 { didSet { invalidateIntrinsicContentSize() } }
+    var onSizeChange: (() -> Void)?
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.height = max(size.height, holdHeight)
+        return size
+    }
+
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        onSizeChange?()
+    }
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
 /// and never appears in screenshots or screen recordings.
 final class OverlayPanel: NSPanel {
     let model = OverlayModel()
+    private var bar: BarHostingView!
+    /// How long the bar takes to grow or shrink with its text.
+    static let resizeDuration = 0.18
+    private var shownAt = Date.distantPast
+    private var releaseHold: DispatchWorkItem?
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 680, height: 200),
@@ -67,7 +92,11 @@ final class OverlayPanel: NSPanel {
         isMovableByWindowBackground = true
         // Keep the bar out of screenshots and recordings (SHOWTELL_CAPTURE_BAR=1 lets it in, for docs and tests).
         if ProcessInfo.processInfo.environment["SHOWTELL_CAPTURE_BAR"] == nil { sharingType = .none }
-        contentView = NSHostingView(rootView: OverlayView(model: model))
+        bar = BarHostingView(rootView: OverlayView(model: model))
+        // At once, not on the next turn: a window grown after SwiftUI has drawn shows the bar too low for a frame.
+        bar.onSizeChange = { [weak self] in self?.fitToBar() }
+        contentView = bar
+        model.onTextHeight = { [weak self] in self?.setTextHeight($0) }
         // Dragged to another screen: the most the bar may grow changes with it.
         NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: self,
                                                queue: .main) { [weak self] _ in self?.fitMaxHeight() }
@@ -83,7 +112,43 @@ final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }  // so you can click in and edit the text
     override var canBecomeMain: Bool { false }
 
+    /// Keeps the top edge where it is, so the bar grows and shrinks at the bottom.
+    private func fitToBar() {
+        let height = bar.intrinsicContentSize.height
+        guard height > 0, abs(frame.height - height) > 0.5 else { return }
+        var f = frame
+        f.origin.y += f.height - height
+        f.size.height = height
+        setFrame(f, display: true)
+        invalidateShadow()
+    }
+
+    /// The bar follows its text with a short ease-out, but not just after it appears or is reset
+    /// for a new recording. Growing, the window takes the new height at once and the bar grows into
+    /// it; shrinking, the window waits until the bar has.
+    private func setTextHeight(_ height: CGFloat) {
+        guard height != model.textHeight else { return }
+        guard isVisible, Date().timeIntervalSince(shownAt) > 0.3 else {
+            model.textHeight = height
+            return
+        }
+        let duration = Self.resizeDuration
+        if height < model.textHeight {
+            releaseHold?.cancel()
+            bar.holdHeight = max(bar.holdHeight, frame.height)
+            let release = DispatchWorkItem { [weak self] in self?.bar.holdHeight = 0 }
+            releaseHold = release
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.02, execute: release)
+        }
+        withAnimation(.easeOut(duration: duration)) { model.textHeight = height }
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.02) { [weak self] in self?.invalidateShadow() }
+    }
+
     func present() {
+        shownAt = Date()
+        releaseHold?.cancel()
+        bar.holdHeight = 0
+        fitToBar()
         if let screen = NSScreen.main {
             let f = screen.visibleFrame
             setFrameTopLeftPoint(NSPoint(x: f.midX - frame.width / 2, y: f.maxY - 12))
@@ -108,7 +173,7 @@ struct OverlayView: View {
             header
             // The panel keeps its top edge when its content grows, so the bar grows downwards.
             TranscriptEditor(text: model.text, onUserEdit: { model.onUserEdit?($0) },
-                             onHeight: { model.textHeight = $0 })
+                             onHeight: { model.onTextHeight?($0) })
                 .frame(height: min(max(model.textHeight, 64), model.maxTextHeight))
             if !model.shots.isEmpty || !model.clips.isEmpty { shotStrip }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -130,6 +195,8 @@ struct OverlayView: View {
         .frame(width: 680)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        // Pinned to the window's top while the window is taller than the bar (see `BarHostingView`).
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
     }
 
     private var header: some View {
