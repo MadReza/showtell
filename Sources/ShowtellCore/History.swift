@@ -132,6 +132,22 @@ public struct HistoryStore: Sendable {
         try save(entries)
     }
 
+    /// Points every entry that uses a renamed picture at its new name (old name → new name).
+    public func renameShots(_ renames: [String: String]) throws {
+        guard !renames.isEmpty else { return }
+        var entries = load()
+        var changed = false
+        for i in entries.indices {
+            for j in entries[i].shots.indices {
+                if let new = renames[entries[i].shots[j].file] {
+                    entries[i].shots[j].file = new
+                    changed = true
+                }
+            }
+        }
+        if changed { try save(entries) }
+    }
+
     /// Removes these entries and their screenshots, unless another entry still uses a picture.
     /// Returns how many picture files were deleted.
     @discardableResult

@@ -658,14 +658,34 @@ final class AppController: NSObject, NSMenuDelegate {
         unbindBarKeys()
         // Replacements, then each of your terms in the case you wrote it ("Herdr" → "herdr").
         let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: repoPath).map { ($0.text, $0.text) }
-        let pieces = composer.pieces().map { piece -> Piece in
-            if case .text(let s) = piece { return .text(Vocabulary.applyReplacements(s, rules)) }
-            return piece
-        }
         let rendered = composer.render()
-        let id = recordingID
-        let shotURLs = composer.shotURLs, clipTexts = composer.clipTexts
+        let sentText = Vocabulary.applyReplacements(rendered, rules)
+        let id = recordingID, date = recordingStart
         let toCursor = sendsToCursor, sendTo = sendTarget, routed = spokenRoute != nil
+        // Pictures are named for where they go before delivery reads them, and again as unsent
+        // if it fails; the history and the pieces use the new names.
+        let destinationWord = toCursor ? "cursor" : sendTo?.name ?? ShotNames.unsent
+        let originalURLs = composer.shotURLs
+        let shotURLs = ShotNames.rename(originalURLs, text: sentText, destination: destinationWord,
+                                        delivered: toCursor || sendTo != nil, date: date)
+        let newURL = Dictionary(originalURLs.compactMap { n, url in shotURLs[n].map { (url, $0) } },
+                                uniquingKeysWith: { a, _ in a })
+        let clipTexts = composer.clipTexts
+        let pieces = composer.pieces().map { piece -> Piece in
+            switch piece {
+            case .text(let s): return .text(Vocabulary.applyReplacements(s, rules))
+            case .image(let url): return .image(newURL[url] ?? url)
+            case .copied: return piece
+            }
+        }
+        func renameAsUnsent() {
+            let renamed = ShotNames.rename(shotURLs, text: sentText, destination: destinationWord, delivered: false, date: date)
+            let names = Dictionary(shotURLs.compactMap { n, url in
+                renamed[n].map { (url.lastPathComponent, $0.lastPathComponent) }
+            }, uniquingKeysWith: { a, _ in a })
+            do { try history.renameShots(names) } catch { log.error("history not updated: \(error.localizedDescription, privacy: .public)") }
+            historyWindow.reload()
+        }
         defer { if state == .idle { spokenRoute = nil } }  // a new recording has its own
         if routed, settings.spokenRouteSticks {
             // The named session becomes the open one, as if picked from the menu.
@@ -681,7 +701,7 @@ final class AppController: NSObject, NSMenuDelegate {
 
         // Kept as sent: your replacements applied, markers in place.
         func remember(_ destination: HistoryDestination, submitted: Bool) {
-            record(.sent(id: id, destination: destination, text: Vocabulary.applyReplacements(rendered, rules),
+            record(.sent(id: id, destination: destination, text: sentText,
                          shots: shotURLs, clips: clipTexts, submitted: submitted))
         }
 
@@ -692,6 +712,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 if state == .idle { flash(.sent, for: 1.0) }
             } else {
                 markFailed(id, "Accessibility not allowed; left on the clipboard")
+                renameAsUnsent()
                 flash(.info("Copied — press ⌘V to paste (allow Accessibility to paste for you)"), for: 5)
             }
             return
@@ -723,6 +744,7 @@ final class AppController: NSObject, NSMenuDelegate {
         case .failure(let error):
             log.error("not sent: \(String(describing: error), privacy: .public)")
             markFailed(id, "\(error)")
+            renameAsUnsent()
             let file = storage.root.appendingPathComponent("unsent-\(id).txt")
             try? rendered.write(to: file, atomically: true, encoding: .utf8)
             let message = "Not sent: \(error). Saved to \(file.lastPathComponent)"
@@ -822,6 +844,11 @@ final class AppController: NSObject, NSMenuDelegate {
     private func cancelRecording() {
         guard state == .recording || state == .reviewing else { return }
         stopCapture()
+        // Its pictures stay in shots/, named as unsent.
+        ShotNames.rename(composer.shotURLs, text: composer.render(),
+                         destination: sendsToCursor ? "cursor" : sendTarget?.name ?? ShotNames.unsent,
+                         delivered: false, date: recordingStart)
+        composer = Composer()
         state = .idle
         spokenRoute = nil
         generation += 1
