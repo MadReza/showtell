@@ -18,7 +18,7 @@ final class SettingsWindow {
     }
 
     func show(settings: ShowtellCore.Settings, onChange: @escaping (ShowtellCore.Settings) -> Void, onRecording: @escaping (Bool) -> Void,
-              cleaner: TextCleaner, onAskAccessibility: @escaping () -> Void) {
+              cleaner: TextCleaner, onAskAccessibility: @escaping () -> Void, onOpenHistory: @escaping () -> Void) {
         self.cleaner = cleaner
         defer { watchPermissions() }
         if let window, let model {
@@ -32,6 +32,7 @@ final class SettingsWindow {
         model.onChange = onChange
         model.onRecording = onRecording
         model.onAskAccessibility = onAskAccessibility
+        model.onOpenHistory = onOpenHistory
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Showtell Settings"
@@ -90,6 +91,7 @@ final class SettingsModel: ObservableObject {
     var onChange: ((ShowtellCore.Settings) -> Void)?
     var onRecording: ((Bool) -> Void)?
     var onAskAccessibility: (() -> Void)?
+    var onOpenHistory: (() -> Void)?
 
     init(settings: ShowtellCore.Settings, storage: Storage) {
         self.settings = settings
@@ -227,6 +229,8 @@ struct SettingsView: View {
             }
             Section {
                 HStack {
+                    Button("History…") { model.onOpenHistory?() }
+                        .help("Every message sent: copy it, send it again, delete it, or empty the screenshots folder")
                     Button("Show screenshots folder") { NSWorkspace.shared.open(model.storage.shotsURL) }
                     Spacer()
                     Button("Open settings file") { NSWorkspace.shared.open(model.storage.settingsURL) }

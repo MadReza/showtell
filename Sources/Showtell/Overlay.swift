@@ -41,6 +41,7 @@ final class OverlayModel: ObservableObject {
     var onToggleSubmit: (() -> Void)?
     var onToggleScreenshots: (() -> Void)?
     var onToggleText: (() -> Void)?
+    var onShowHistory: (() -> Void)?
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
@@ -159,6 +160,11 @@ struct OverlayView: View {
             }
             .buttonStyle(.plain)
             .help("Send this message to another session (\(model.targetShortcuts) moves through the list)")
+            Button { model.onShowHistory?() } label: {
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("History: every message sent, to copy or send again")
         }
         .animation(.easeOut(duration: 0.25), value: model.routeNote)
         .onChange(of: model.targetPulse) { _, _ in

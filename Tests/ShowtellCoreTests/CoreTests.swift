@@ -458,3 +458,86 @@ final class EventLog: @unchecked Sendable {
         #expect(route("Fix it, send this to presentation file location")?.target == .session("w1:p1"))
     }
 }
+
+@Suite struct HistoryTests {
+    func makeStore() throws -> HistoryStore {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("showtell-history-\(UUID().uuidString)")
+        let storage = Storage(root: root)
+        try storage.prepare()
+        return HistoryStore(storage: storage)
+    }
+
+    func picture(_ store: HistoryStore, _ name: String, bytes: Int = 10) throws {
+        try Data(repeating: 1, count: bytes).write(to: store.shotsURL.appendingPathComponent(name))
+    }
+
+    @Test func recordsNewestFirstAndSurvivesReload() throws {
+        let store = try makeStore()
+        let target = try JSONDecoder().decode(PinnedTarget.self, from: Data(
+            #"{"sessionID":"s1","terminalID":"t1","paneID":"w1:p1","name":"showtell","cwd":"/r"}"#.utf8))
+        try store.record(HistoryEntry(id: "a", destination: .cursor, text: "first", submitted: false))
+        try store.record(HistoryEntry(id: "b", destination: .session(target), text: "look [📷 1] and [📋 1]",
+                                      shots: [.init(number: 1, file: "b-01.png")], clips: [.init(number: 1, text: "npm test")],
+                                      submitted: true))
+        let entries = store.load()
+        #expect(entries.map(\.id) == ["b", "a"])
+        #expect(entries[0].destination == .session(target))
+        #expect(entries[0].destination.label == "showtell")
+        #expect(entries[0].clips == [.init(number: 1, text: "npm test")])
+        try store.markFailed("a", "no session")
+        #expect(store.load()[1].failure == "no session")
+    }
+
+    @Test func keepsOnlyWhatTheSentTextStillMarks() {
+        let e = HistoryEntry.sent(id: "r", destination: .cursor, text: "see [📷 2] and [📋 1]",
+                                  shots: [1: URL(fileURLWithPath: "/s/r-01.png"), 2: URL(fileURLWithPath: "/s/r-02.png")],
+                                  clips: [1: "kept", 2: "deleted marker"], submitted: false)
+        #expect(e.shots == [.init(number: 2, file: "r-02.png")])
+        #expect(e.clips == [.init(number: 1, text: "kept")])
+    }
+
+    @Test func piecesLeaveOutRemovedPictures() throws {
+        let store = try makeStore()
+        try picture(store, "x-01.png")
+        let entry = HistoryEntry(destination: .cursor, text: "a [📷 1] b [📷 2] c [📋 1]",
+                                 shots: [.init(number: 1, file: "x-01.png"), .init(number: 2, file: "x-02.png")],
+                                 clips: [.init(number: 1, text: "  kept  as is ")], submitted: false)
+        #expect(entry.pieces(shotsIn: store.shotsURL) == [
+            .text("a "), .image(store.shotsURL.appendingPathComponent("x-01.png")), .text(" b c "), .copied("  kept  as is "),
+        ])
+        #expect(entry.preview == "a [📷 1] b [📷 2] c [📋 1]")
+    }
+
+    @Test func deletingKeepsPicturesAnotherEntryUses() throws {
+        let store = try makeStore()
+        try picture(store, "p-01.png")
+        try picture(store, "p-02.png")
+        let shared = HistoryEntry.Shot(number: 1, file: "p-01.png")
+        try store.record(HistoryEntry(id: "original", destination: .cursor, text: "[📷 1] [📷 2]",
+                                      shots: [shared, .init(number: 2, file: "p-02.png")], submitted: false))
+        try store.record(HistoryEntry(id: "resent", destination: .cursor, text: "[📷 1]", shots: [shared], submitted: false))
+        #expect(try store.delete(["original"]) == 1)
+        let fm = FileManager.default
+        #expect(fm.fileExists(atPath: store.shotsURL.appendingPathComponent("p-01.png").path))
+        #expect(!fm.fileExists(atPath: store.shotsURL.appendingPathComponent("p-02.png").path))
+        #expect(store.load().map(\.id) == ["resent"])
+        #expect(try store.clear() == 1)
+        #expect(store.load().isEmpty)
+    }
+
+    @Test func clearingShotsKeepsTextAndTheRecordingInProgress() throws {
+        let store = try makeStore()
+        try picture(store, "old-01.png", bytes: 100)
+        try picture(store, "old-02.png", bytes: 50)
+        try picture(store, "now-01.png", bytes: 5)
+        try "not a picture".write(to: store.shotsURL.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        try store.record(HistoryEntry(id: "a", destination: .cursor, text: "see [📷 1]",
+                                      shots: [.init(number: 1, file: "old-01.png")], submitted: true))
+        let usage = store.shotsUsage()
+        #expect(usage.files == 3 && usage.bytes == 155)
+        #expect(store.clearShots(keeping: ["now-01.png"]) == 2)
+        #expect(store.shotsUsage().files == 1)
+        #expect(store.load()[0].text == "see [📷 1]")
+        #expect(store.load()[0].pieces(shotsIn: store.shotsURL) == [.text("see")])
+    }
+}
