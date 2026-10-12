@@ -150,7 +150,7 @@ keep their permissions.
 Requires macOS 14+, Swift 6 (Command Line Tools are enough), and herdr.
 
 ```sh
-swift test                      # core tests
+scripts/test.sh                 # core tests (swift test, with the testing macros plugin found)
 scripts/make-signing-cert.sh    # once: a local signing identity so permissions survive rebuilds
 scripts/install.sh              # builds and installs /Applications/Showtell.app, then opens it
 ```
