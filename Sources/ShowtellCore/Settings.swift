@@ -55,11 +55,28 @@ public struct Settings: Codable, Equatable, Sendable {
     public var pinned: PinnedTarget?
     /// Insert into whatever app has the cursor instead of the open session.
     public var insertAtCursor = false
+    /// Which model tidies the text (a `CleanupModel` id); nil means no clean-up.
+    public var cleanupModel: String?
+    /// Tidy every message when you send it. Off: only when you press the clean-up shortcut.
+    public var cleanupOnSend = false
+    /// While recording: stop listening and tidy the text for review; press again for the original.
+    public var cleanupShortcut = Shortcut.chord(8, 0x1000 | 0x800, "C")
+    /// While recording: switch between sending (Enter) and just pasting. Changes the default too.
+    public var sendToggleShortcut = Shortcut.chord(1, 0x1000 | 0x800, "S")
+    /// While recording: send this message to the next or previous session in the list.
+    public var nextTargetShortcut = Shortcut.chord(125, 0x1000 | 0x800, "↓")
+    public var previousTargetShortcut = Shortcut.chord(126, 0x1000 | 0x800, "↑")
+    /// "For the showtell session, …" or "… send this to showtell" sends that message there.
+    public var spokenRouting = true
+    /// A spoken destination becomes the open session for the next messages too (off: that message only).
+    public var spokenRouteSticks = true
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned, insertAtCursor
+        case cleanupModel, cleanupOnSend, cleanupShortcut
+        case sendToggleShortcut, nextTargetShortcut, previousTargetShortcut, spokenRouting, spokenRouteSticks
         case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
     }
 
@@ -79,6 +96,14 @@ public struct Settings: Codable, Equatable, Sendable {
         hideDuringScreenshots = try c.decodeIfPresent(Bool.self, forKey: .hideDuringScreenshots) ?? d.hideDuringScreenshots
         pinned = try c.decodeIfPresent(PinnedTarget.self, forKey: .pinned)
         insertAtCursor = try c.decodeIfPresent(Bool.self, forKey: .insertAtCursor) ?? false
+        cleanupModel = try c.decodeIfPresent(String.self, forKey: .cleanupModel)
+        cleanupOnSend = try c.decodeIfPresent(Bool.self, forKey: .cleanupOnSend) ?? d.cleanupOnSend
+        cleanupShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .cleanupShortcut) ?? d.cleanupShortcut
+        sendToggleShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .sendToggleShortcut) ?? d.sendToggleShortcut
+        nextTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .nextTargetShortcut) ?? d.nextTargetShortcut
+        previousTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .previousTargetShortcut) ?? d.previousTargetShortcut
+        spokenRouting = try c.decodeIfPresent(Bool.self, forKey: .spokenRouting) ?? d.spokenRouting
+        spokenRouteSticks = try c.decodeIfPresent(Bool.self, forKey: .spokenRouteSticks) ?? d.spokenRouteSticks
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -89,6 +114,14 @@ public struct Settings: Codable, Equatable, Sendable {
         try c.encode(hideDuringScreenshots, forKey: .hideDuringScreenshots)
         try c.encodeIfPresent(pinned, forKey: .pinned)
         try c.encode(insertAtCursor, forKey: .insertAtCursor)
+        try c.encodeIfPresent(cleanupModel, forKey: .cleanupModel)
+        try c.encode(cleanupOnSend, forKey: .cleanupOnSend)
+        try c.encode(cleanupShortcut, forKey: .cleanupShortcut)
+        try c.encode(sendToggleShortcut, forKey: .sendToggleShortcut)
+        try c.encode(nextTargetShortcut, forKey: .nextTargetShortcut)
+        try c.encode(previousTargetShortcut, forKey: .previousTargetShortcut)
+        try c.encode(spokenRouting, forKey: .spokenRouting)
+        try c.encode(spokenRouteSticks, forKey: .spokenRouteSticks)
     }
 }
 
@@ -107,6 +140,8 @@ public struct Storage: Sendable {
     /// `wrong => right` lines applied to the finished text.
     public var replacementsURL: URL { root.appendingPathComponent("replacements.txt") }
     public var shotsURL: URL { root.appendingPathComponent("shots", isDirectory: true) }
+    /// Downloaded clean-up models.
+    public var modelsURL: URL { root.appendingPathComponent("models", isDirectory: true) }
 
     public func prepare() throws {
         let fm = FileManager.default

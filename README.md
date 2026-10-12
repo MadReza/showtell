@@ -21,21 +21,64 @@ terms boosted.
    the way while you capture, and each screenshot appears in the text as `[📷 n]` at the word
    you were saying.
 4. Click into the bar to fix words, or move and delete `[📷 n]` markers. Click the destination
-   name in the bar to send this message somewhere else.
+   name in the bar, or press **⌃⌥↑ / ⌃⌥↓**, to send this message to another session (or the
+   cursor). Untick **Send** in the bar, or press **⌃⌥S**, to leave the message in Claude's input
+   without pressing Enter. Both choices stay for the next message.
 5. Tap **left ⌥** again. The message is pasted into the session (each screenshot becomes an
    `[Image #n]` chip) and sent. If Claude is busy, Claude Code queues it. If Claude is showing a
    dialog, Showtell waits.
 
-**⌃⌥⌫** cancels a recording.
+**⌃⌥⌫** cancels a recording. Every shortcut can be changed in Settings.
+
+### Say where it goes
+
+Name a session at the start or the end of a message and that message goes there instead:
+
+| At the start | At the end |
+|---|---|
+| “For the showtell session, …” | “… this should go to showtell” |
+| “Showtell session: …” | “… send this to the showtell session” |
+| “Send to showtell, …” | “… for the showtell session” |
+| “At the cursor: …” | “… paste it at the cursor” |
+
+Use the session's folder or title; close-sounding names count (“Chotel” finds showtell). The
+phrase is taken out of the message. The session name in the bar pulses and shows a microphone as
+soon as the phrase is heard, with what was heard beside it. Once the message is sent, that session
+stays open for the next messages, like picking it in the menu (Settings → "Keep sending there
+afterwards" off: that message only). A name in the middle of a sentence never switches, and a name that matches no
+session or several changes nothing (the bar says why). A click or ⌃⌥↑/↓ overrides it. The
+session menus and Settings → Say where it goes list the phrases; switch it off there.
+
+### Tidy up text (optional)
+
+Pick a model in Settings → **Tidy up text** and Showtell can fix punctuation, filler words ("um",
+"you know"), numbers ("four zero four" → 404) and misheard words, keeping your own words:
+
+- Press **⌃⌥C** while talking: listening stops and the tidied text appears in the bar. Press it
+  again to see your original, edit if you like, then tap **left ⌥** to send.
+- Or switch on **Tidy every message when I send it**.
+- If a screenshot marker or one of your words goes missing, your original is kept and shown to
+  you before anything is sent.
+
+| Model | Download | Good | Less good |
+|---|---|---|---|
+| Apple Intelligence | none | no download, under a second | needs Apple Intelligence on (macOS 26) |
+| Qwen 2.5 1.5B | 1.1 GB | fastest download and replies | rewords more freely, sometimes shortens |
+| Qwen 3 4B Instruct | 2.5 GB | stays closest to your words while fixing the most | about 3 GB of memory while loaded, 1–2 s |
+
+Picking a downloadable model downloads it (to `~/Library/Application Support/Showtell/models/`).
+Everything runs on your Mac: Apple's on-device model, or llama.cpp inside Showtell. A loaded model
+is freed after five minutes without use.
 
 ## Settings
 
 Menu → **Settings…** (⌘,):
 
-- **Shortcuts.** Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
+- **Shortcuts.** Start and send, cancel, Send or just paste, next and previous session. Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
   single modifier tapped on its own (left ⌥, right ⌘). A plain Esc works for cancelling. Press
   nothing for 2 seconds to keep the old one.
-- **Behaviour.** Whether the second press sends (presses Enter), and whether the bar hides on
+- **Behaviour.** Whether the second press sends (presses Enter; the same as the bar's Send
+  checkbox), and whether the bar hides on
   ⌘⌃⇧3/4.
 - **Permissions.** Microphone and Accessibility status, with a button to allow.
 - **Your words.** One term per line, spelled the way it should appear. Aliases
@@ -43,9 +86,11 @@ Menu → **Settings…** (⌘,):
   session's repository can add terms in `.github/dictation.md` (inline code and the first words
   of list items, the same file VS Code and localvoxtral read).
 - **Replacements.** `wrong => right` lines applied to the finished text.
+- **Say where it goes.** Spoken destinations on or off, with the phrases.
+- **Tidy up text.** The model, whether every message is tidied, and the tidy-up shortcut.
 
 Files live in `~/Library/Application Support/Showtell/`: `settings.json`, `vocabulary.txt`,
-`replacements.txt`, `shots/`, `last-message.txt`, and `unsent-*.txt` for any message that could
+`replacements.txt`, `shots/`, `models/`, `last-message.txt`, and `unsent-*.txt` for any message that could
 not be delivered.
 
 ## Permissions
@@ -80,10 +125,15 @@ Debug tools:
 ```sh
 swift run showtell-cli sessions                                   # Claude sessions in herdr
 swift run showtell-cli send <pane-id> --submit "look" @/tmp/a.png # deliver like the app does
-swift run showtell-cli toggle | cancel | settings                 # drive the running app
+swift run showtell-cli toggle | cancel | tidy | settings          # drive the running app
+swift run showtell-cli submit | next | previous                   # the Send checkbox, the session shortcuts
 swift run showtell-cli target cursor | <pane-id>                  # change where it sends
 .build/release/Showtell --transcribe speech.wav herdr Showtell    # speech self-test on a file
+.build/release/Showtell --tidy apple "so um the build fails" herdr # tidy-up self-test (apple, qwen2.5-1.5b, qwen3-4b)
+/usr/bin/log stream --info --predicate 'subsystem == "dev.showtell"'  # what happened to each message
 ```
+
+`open --env SHOWTELL_CAPTURE_BAR=1 -a Showtell` lets screenshots include the bar. The log shows states and word counts (heard, tidied, pieces sent), never your words.
 
 ## How delivery works
 
