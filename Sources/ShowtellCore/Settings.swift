@@ -61,12 +61,18 @@ public struct Settings: Codable, Equatable, Sendable {
     public var cleanupOnSend = false
     /// While recording: stop listening and tidy the text for review; press again for the original.
     public var cleanupShortcut = Shortcut.chord(8, 0x1000 | 0x800, "C")
+    /// While recording: switch between sending (Enter) and just pasting. Changes the default too.
+    public var sendToggleShortcut = Shortcut.chord(1, 0x1000 | 0x800, "S")
+    /// While recording: send this message to the next or previous session in the list.
+    public var nextTargetShortcut = Shortcut.chord(125, 0x1000 | 0x800, "↓")
+    public var previousTargetShortcut = Shortcut.chord(126, 0x1000 | 0x800, "↑")
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case startShortcut, cancelShortcut, submitOnSecondPress, hideDuringScreenshots, pinned, insertAtCursor
         case cleanupModel, cleanupOnSend, cleanupShortcut
+        case sendToggleShortcut, nextTargetShortcut, previousTargetShortcut
         case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
     }
 
@@ -89,6 +95,9 @@ public struct Settings: Codable, Equatable, Sendable {
         cleanupModel = try c.decodeIfPresent(String.self, forKey: .cleanupModel)
         cleanupOnSend = try c.decodeIfPresent(Bool.self, forKey: .cleanupOnSend) ?? d.cleanupOnSend
         cleanupShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .cleanupShortcut) ?? d.cleanupShortcut
+        sendToggleShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .sendToggleShortcut) ?? d.sendToggleShortcut
+        nextTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .nextTargetShortcut) ?? d.nextTargetShortcut
+        previousTargetShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .previousTargetShortcut) ?? d.previousTargetShortcut
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -102,6 +111,9 @@ public struct Settings: Codable, Equatable, Sendable {
         try c.encodeIfPresent(cleanupModel, forKey: .cleanupModel)
         try c.encode(cleanupOnSend, forKey: .cleanupOnSend)
         try c.encode(cleanupShortcut, forKey: .cleanupShortcut)
+        try c.encode(sendToggleShortcut, forKey: .sendToggleShortcut)
+        try c.encode(nextTargetShortcut, forKey: .nextTargetShortcut)
+        try c.encode(previousTargetShortcut, forKey: .previousTargetShortcut)
     }
 }
 

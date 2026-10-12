@@ -21,12 +21,14 @@ terms boosted.
    the way while you capture, and each screenshot appears in the text as `[📷 n]` at the word
    you were saying.
 4. Click into the bar to fix words, or move and delete `[📷 n]` markers. Click the destination
-   name in the bar to send this message somewhere else.
+   name in the bar, or press **⌃⌥↑ / ⌃⌥↓**, to send this message to another session (or the
+   cursor). Untick **Send** in the bar, or press **⌃⌥S**, to leave the message in Claude's input
+   without pressing Enter. Both choices stay for the next message.
 5. Tap **left ⌥** again. The message is pasted into the session (each screenshot becomes an
    `[Image #n]` chip) and sent. If Claude is busy, Claude Code queues it. If Claude is showing a
    dialog, Showtell waits.
 
-**⌃⌥⌫** cancels a recording.
+**⌃⌥⌫** cancels a recording. Every shortcut can be changed in Settings.
 
 ### Tidy up text (optional)
 
@@ -53,10 +55,11 @@ is freed after five minutes without use.
 
 Menu → **Settings…** (⌘,):
 
-- **Shortcuts.** Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
+- **Shortcuts.** Start and send, cancel, Send or just paste, next and previous session. Click one and press the new shortcut: a key with modifiers (⌃⌥Space, ⇧⌘K) or a
   single modifier tapped on its own (left ⌥, right ⌘). A plain Esc works for cancelling. Press
   nothing for 2 seconds to keep the old one.
-- **Behaviour.** Whether the second press sends (presses Enter), and whether the bar hides on
+- **Behaviour.** Whether the second press sends (presses Enter; the same as the bar's Send
+  checkbox), and whether the bar hides on
   ⌘⌃⇧3/4.
 - **Permissions.** Microphone and Accessibility status, with a button to allow.
 - **Your words.** One term per line, spelled the way it should appear. Aliases
@@ -103,13 +106,14 @@ Debug tools:
 swift run showtell-cli sessions                                   # Claude sessions in herdr
 swift run showtell-cli send <pane-id> --submit "look" @/tmp/a.png # deliver like the app does
 swift run showtell-cli toggle | cancel | tidy | settings          # drive the running app
+swift run showtell-cli submit | next | previous                   # the Send checkbox, the session shortcuts
 swift run showtell-cli target cursor | <pane-id>                  # change where it sends
 .build/release/Showtell --transcribe speech.wav herdr Showtell    # speech self-test on a file
 .build/release/Showtell --tidy apple "so um the build fails" herdr # tidy-up self-test (apple, qwen2.5-1.5b, qwen3-4b)
 /usr/bin/log stream --info --predicate 'subsystem == "dev.showtell"'  # what happened to each message
 ```
 
-The log shows states and word counts (heard, tidied, pieces sent), never your words.
+`open --env SHOWTELL_CAPTURE_BAR=1 -a Showtell` lets screenshots include the bar. The log shows states and word counts (heard, tidied, pieces sent), never your words.
 
 ## How delivery works
 
