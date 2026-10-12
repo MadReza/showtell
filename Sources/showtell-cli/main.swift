@@ -58,7 +58,10 @@ case "send":
         }
         let outbox = Outbox(transport: client)
         await outbox.setEventHandler { event in print("·", event) }
-        if case .failure(let error) = await outbox.enqueue(pieces, to: PinnedTarget(agent: agent), submit: submit) {
+        let result = await outbox.enqueue(pieces, to: PinnedTarget(agent: agent), submit: submit) { draft in
+            print("· cleared from the prompt:", draft.debugDescription)
+        }
+        if case .failure(let error) = result {
             fail("\(error)")
         }
     } catch { fail("\(error)") }

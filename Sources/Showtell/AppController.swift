@@ -730,7 +730,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         let files = shotURLs.values.map(\.lastPathComponent)
         filesSending += files
-        let result = await outbox.enqueue(pieces, to: target, submit: submit)
+        let result = await outbox.enqueue(pieces, to: target, submit: submit, onClearedDraft: keepClearedDraft(id))
         doneSending(files)
         pendingSends -= 1
         switch result {
@@ -768,6 +768,19 @@ final class AppController: NSObject, NSMenuDelegate {
         historyWindow.reload()
     }
 
+    /// Saves what was in the session's prompt with the message, so a real draft isn't lost.
+    private func keepClearedDraft(_ id: String) -> @Sendable (String) -> Void {
+        { [weak self] draft in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                do { try self.history.setClearedDraft(id, draft) } catch {
+                    log.error("history not updated: \(error.localizedDescription, privacy: .public)")
+                }
+                self.historyWindow.reload()
+            }
+        }
+    }
+
     private func makeHistoryWindow() -> HistoryWindow {
         let window = HistoryWindow(store: history)
         window.sessions = { [weak self] in self?.sessionsNow() ?? [] }
@@ -794,6 +807,7 @@ final class AppController: NSObject, NSMenuDelegate {
         copy.date = Date()
         copy.destination = destination
         copy.failure = nil
+        copy.clearedDraft = nil
         copy.submitted = destination != .cursor && submit
         record(copy)
         switch destination {
@@ -814,7 +828,7 @@ final class AppController: NSObject, NSMenuDelegate {
             }
             let files = entry.shots.map(\.file)
             filesSending += files
-            let result = await outbox.enqueue(pieces, to: target, submit: submit)
+            let result = await outbox.enqueue(pieces, to: target, submit: submit, onClearedDraft: keepClearedDraft(id))
             doneSending(files)
             pendingSends -= 1
             switch result {

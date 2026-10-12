@@ -248,7 +248,12 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
         record("paste \(pane) \(text)")
     }
     func pressEnter(pane: String) async throws { record("enter \(pane)") }
-    func readVisible(pane: String) async throws -> String { "" }
+    /// Screens returned by successive reads; the last one repeats.
+    var screens: [String] = [""]
+    func readScreen(pane: String) async throws -> String {
+        lock.withLock { screens.count > 1 ? screens.removeFirst() : screens[0] }
+    }
+    func sendClearKeys(pane: String, rounds: Int) async throws { record("clear \(pane) \(rounds)") }
     private func record(_ s: String) { lock.lock(); calls.append(s); lock.unlock() }
 }
 
@@ -304,6 +309,37 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
         #expect(fake.calls == ["paste w1:p2 first half", "paste w1:p2 later"])
     }
 
+    @Test func clearsTextLeftInThePromptBeforePasting() async {
+        let fake = FakeHerdr(statuses: [.idle])
+        fake.screens = [PromptScreens.typed, PromptScreens.empty]
+        let drafts = DraftLog()
+        let result = await Outbox(transport: fake, sleep: { _ in })
+            .enqueue([.text("hello")], to: target, submit: true, onClearedDraft: { drafts.add($0) })
+        #expect((try? result.get()) != nil)
+        #expect(fake.calls == ["clear w1:p2 2", "paste w1:p2 hello", "enter w1:p2"])
+        #expect(drafts.all == ["fgd g junk"])
+    }
+
+    @Test func emptyPromptIsNotTouched() async {
+        let fake = FakeHerdr(statuses: [.idle])
+        fake.screens = [PromptScreens.empty]
+        await Outbox(transport: fake, sleep: { _ in }).enqueue([.text("hello")], to: target, submit: false)
+        #expect(fake.calls == ["paste w1:p2 hello"])
+    }
+
+    @Test func promptThatWontClearIsNotPastedInto() async {
+        let fake = FakeHerdr(statuses: [.idle])
+        fake.screens = [PromptScreens.typed]
+        let drafts = DraftLog()
+        let result = await Outbox(transport: fake, sleep: { _ in })
+            .enqueue([.text("hello")], to: target, submit: true, onClearedDraft: { drafts.add($0) })
+        if case .failure(let e) = result { #expect(e as? DeliveryError == .promptNotCleared("showtell")) } else {
+            Issue.record("expected failure")
+        }
+        #expect(fake.calls == ["clear w1:p2 2", "clear w1:p2 2", "clear w1:p2 2"])
+        #expect(drafts.all == ["fgd g junk"])
+    }
+
     @Test func targetGone() async {
         let fake = FakeHerdr(statuses: [.idle])
         var other = target
@@ -321,6 +357,81 @@ final class EventLog: @unchecked Sendable {
     private let lock = NSLock()
     func add(_ e: DeliveryEvent) { lock.lock(); events.append(e); lock.unlock() }
     var all: [DeliveryEvent] { lock.lock(); defer { lock.unlock() }; return events }
+}
+
+final class DraftLog: @unchecked Sendable {
+    private var drafts: [String] = []
+    private let lock = NSLock()
+    func add(_ d: String) { lock.lock(); drafts.append(d); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return drafts }
+}
+
+/// Bottoms of Claude Code 2.1 screens as herdr's `pane.read` (format ansi) returns them.
+enum PromptScreens {
+    static let rule = "\u{1b}[0m\u{1b}[38;2;136;136;136m" + String(repeating: "─", count: 60) + "\u{1b}[0m\r"
+    static let footer = """
+      \u{1b}[0m\u{1b}[1m\u{1b}[38;5;6mOpus 5.5 (1M context)\u{1b}[0m\u{1b}[38;2;153;153;153m ctx 0/1.00M\u{1b}[0m\r
+      \u{1b}[0m\u{1b}[38;2;255;107;128m⏵⏵ bypass permissions on\u{1b}[0m\u{1b}[38;2;153;153;153m (shift+tab to cycle)\u{1b}[0m
+    """
+
+    static func screen(_ box: String) -> String {
+        "⏺ Earlier answer\r\n\r\n\(rule)\n\(box)\n\(rule)\n\(footer)"
+    }
+
+    /// An empty prompt: only the dim placeholder.
+    static let empty = screen("❯\u{a0}\u{1b}[0m\u{1b}[2mTry \"fix lint errors\"\u{1b}[0m\r")
+    static let typed = screen("❯\u{a0}fgd g junk\r")
+    static let multiline = screen("""
+    ❯\u{a0}fgd g junkline one of a pasted draft\r
+      line two that wraps and\r
+      on\r
+      line three\r
+    """)
+}
+
+@Suite struct PromptInputTests {
+    @Test func emptyPromptShowsOnlyThePlaceholder() {
+        #expect(PromptInput.parse(PromptScreens.empty) == "")
+        #expect(PromptInput.parse(PromptScreens.screen("❯ \r")) == "")
+    }
+
+    @Test func typedText() {
+        #expect(PromptInput.parse(PromptScreens.typed) == "fgd g junk")
+        #expect(PromptInput.lineCount(PromptScreens.typed) == 1)
+    }
+
+    @Test func severalLinesKeepTheirBreaksWithoutTheIndent() {
+        #expect(PromptInput.parse(PromptScreens.multiline)
+            == "fgd g junkline one of a pasted draft\nline two that wraps and\non\nline three")
+        #expect(PromptInput.lineCount(PromptScreens.multiline) == 4)
+    }
+
+    @Test func dimSuggestionAfterTypedTextIsLeftOut() {
+        let s = PromptScreens.screen("❯\u{a0}fix the\u{1b}[2m login bug\u{1b}[22m\r")
+        #expect(PromptInput.parse(s) == "fix the")
+    }
+
+    @Test func bashModeKeepsItsBang() {
+        #expect(PromptInput.parse(PromptScreens.screen("! ls -la\r")) == "!ls -la")
+    }
+
+    @Test func plainTextPlaceholderCountsAsEmpty() {
+        let rule = String(repeating: "─", count: 60)
+        #expect(PromptInput.parse("\(rule)\n❯ Try \"refactor auth.ts\"\n\(rule)\n") == "")
+        #expect(PromptInput.parse("\(rule)\n❯ fgd g\n\(rule)\n") == "fgd g")
+    }
+
+    @Test func noInputBoxOnScreen() {
+        #expect(PromptInput.parse("") == nil)
+        #expect(PromptInput.parse("$ ls\n❯ not claude\n") == nil)
+        // A dialog replaces the box: the ❯ there is a menu cursor, not under a rule.
+        #expect(PromptInput.parse(" Do you trust this folder?\n\n ❯ No, exit\n   Yes, I trust this folder\n") == nil)
+    }
+
+    @Test func lowestBoxWins() {
+        let s = PromptScreens.screen("❯ old\r") + "\n" + PromptScreens.typed
+        #expect(PromptInput.parse(s) == "fgd g junk")
+    }
 }
 
 @Suite struct CleanupTests {
@@ -486,6 +597,9 @@ final class EventLog: @unchecked Sendable {
         #expect(entries[0].clips == [.init(number: 1, text: "npm test")])
         try store.markFailed("a", "no session")
         #expect(store.load()[1].failure == "no session")
+        try store.setClearedDraft("b", "fgd g")
+        #expect(store.load()[0].clearedDraft == "fgd g")
+        #expect(store.load()[1].clearedDraft == nil)
     }
 
     @Test func keepsOnlyWhatTheSentTextStillMarks() {

@@ -65,9 +65,26 @@ public struct TerminalSessions: HerdrTransport {
         }
     }
 
-    public func readVisible(pane: String) async throws -> String {
+    public func sendClearKeys(pane: String, rounds: Int) async throws {
+        guard rounds > 0 else { return }
         if let p = Self.strip(pane, Self.tmuxPrefix) {
-            return try Self.run(Self.tmuxPath, ["capture-pane", "-p", "-t", p])
+            let round = ["C-e", "C-k", "C-u", "BSpace"]
+            try Self.run(Self.tmuxPath, ["send-keys", "-t", p] + Array(Array(repeating: round, count: rounds).joined()))
+        } else if let s = Self.strip(pane, Self.itermPrefix) {
+            // Typed, not pasted: Ctrl+E, Ctrl+K, Ctrl+U, Backspace (DEL).
+            let round = [5, 11, 21, 127].map { "(character id \($0))" }.joined(separator: " & ")
+            try Self.iterm(s, write: Array(repeating: round, count: rounds).joined(separator: " & "), text: "")
+        } else {
+            throw HerdrError(code: "unknown_pane", message: pane)
+        }
+    }
+
+    /// tmux gives colours (`-e`); iTerm2's AppleScript only plain text.
+    public func readScreen(pane: String) async throws -> String {
+        if let p = Self.strip(pane, Self.tmuxPrefix) {
+            return try Self.run(Self.tmuxPath, ["capture-pane", "-p", "-e", "-t", p])
+        } else if let s = Self.strip(pane, Self.itermPrefix) {
+            return try Self.itermContents(s)
         }
         return ""
     }
@@ -172,6 +189,26 @@ public struct TerminalSessions: HerdrTransport {
         try run("/usr/bin/osascript", ["-e", script, session, text])
     }
 
+    /// The session's visible text.
+    static func itermContents(_ session: String) throws -> String {
+        let script = """
+        on run argv
+            set sid to item 1 of argv
+            tell application id "com.googlecode.iterm2"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if (id of s) is sid then return contents of s
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+            error "iTerm2 session not found"
+        end run
+        """
+        return try run("/usr/bin/osascript", ["-e", script, session])
+    }
+
     // MARK: Helpers
 
     static func pairs(_ out: String) -> [String: String] {
@@ -248,8 +285,16 @@ public struct AllSessions: HerdrTransport {
         }
     }
 
-    public func readVisible(pane: String) async throws -> String {
+    public func readScreen(pane: String) async throws -> String {
         TerminalSessions.handles(pane: pane)
-            ? try await terminals.readVisible(pane: pane) : try await herdr.readVisible(pane: pane)
+            ? try await terminals.readScreen(pane: pane) : try await herdr.readScreen(pane: pane)
+    }
+
+    public func sendClearKeys(pane: String, rounds: Int) async throws {
+        if TerminalSessions.handles(pane: pane) {
+            try await terminals.sendClearKeys(pane: pane, rounds: rounds)
+        } else {
+            try await herdr.sendClearKeys(pane: pane, rounds: rounds)
+        }
     }
 }
