@@ -134,6 +134,10 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject var cleaner: TextCleaner
 
+    static func pair(_ s: ShowtellCore.Settings) -> String {
+        "\(s.previousTargetShortcut.label) / \(s.nextTargetShortcut.label)"
+    }
+
     var body: some View {
         Form {
             Section("Shortcuts") {
@@ -158,6 +162,19 @@ struct SettingsView: View {
                     Text("This copy runs from \(Bundle.main.bundlePath). Install it with scripts/install.sh so login opens the right one.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            Section("Say where it goes") {
+                Toggle("Send to a session I name at the start or end of a message", isOn: $model.settings.spokenRouting)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("At the start").font(.caption.weight(.semibold))
+                    Text("“For the showtell session, …”   “Showtell session: …”   “Send to showtell, …”   “At the cursor: …”")
+                    Text("At the end").font(.caption.weight(.semibold)).padding(.top, 4)
+                    Text("“… this should go to showtell”   “… send this to showtell”   “… for the showtell session”   “… paste it at the cursor”")
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                .opacity(model.settings.spokenRouting ? 1 : 0.5)
+                Text("Use the session's folder or title; close-sounding names count. The phrase is taken out of the message, the bar switches with a pulse as soon as it hears it, and only that message goes there. A name in the middle of a sentence never switches; if a name matches no session or several, nothing changes. A click or \(Self.pair(model.settings)) in the bar overrides it.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             tidySection
             Section("Permissions") {

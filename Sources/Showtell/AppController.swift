@@ -52,6 +52,13 @@ final class AppController: NSObject, NSMenuDelegate {
 
     private var model: OverlayModel { panel.model }
 
+    /// A destination said at the start or end of this message; it wins over the open session
+    /// for this message only. A click or ⌃⌥↑↓ dismisses it.
+    private var spokenRoute: Routing.Route?
+    private var routeDismissed = false
+    private var routeAgents: [String: HerdrAgent] = [:]
+    private var routeCandidates: [Routing.Candidate] = []
+
     override init() {
         try? storage.prepare()
         settings = storage.loadSettings()
@@ -235,7 +242,7 @@ final class AppController: NSObject, NSMenuDelegate {
     /// The Send checkbox or its shortcut: this message presses Enter or not, and so do the next
     /// ones (it is the "Second press sends" setting).
     private func toggleSendInBar() {
-        guard state != .idle, !settings.insertAtCursor else { return }
+        guard state != .idle, !sendsToCursor else { return }
         settings.submitOnSecondPress.toggle()
         storage.save(settings)
         settingsWindow.update(settings)
@@ -246,6 +253,7 @@ final class AppController: NSObject, NSMenuDelegate {
     /// the session list (the cursor first, as in the menu).
     private func moveTarget(by step: Int) {
         guard state != .idle else { return }
+        dismissSpokenRoute()
         let agents = sessionsNow()
         let count = agents.count + 1
         let current = settings.insertAtCursor
@@ -265,11 +273,56 @@ final class AppController: NSObject, NSMenuDelegate {
     /// The Send checkbox, the destination and the hint, after any of them changed.
     private func updateBarControls() {
         model.submit = settings.submitOnSecondPress
-        model.showsSubmit = !settings.insertAtCursor
+        model.showsSubmit = !sendsToCursor
+        model.routeSpoken = spokenRoute != nil
         model.submitShortcut = settings.sendToggleShortcut.label
         model.targetShortcuts = Self.pairLabel(settings.previousTargetShortcut, settings.nextTargetShortcut)
         model.targetName = targetLabel
         if state == .reviewing { model.hint = reviewHint() } else if state == .recording { refreshHint() }
+    }
+
+    /// A destination said at the start or end of the message: shown, with a pulse, as soon as it
+    /// is heard; used for this message only.
+    private func evaluateRoute() {
+        guard settings.spokenRouting, !routeDismissed else { return }
+        let before = spokenRoute?.target
+        switch Routing.find(in: composer.render(), candidates: routeCandidates) {
+        case .route(let route):
+            spokenRoute = route
+            model.routeNote = "heard “\(route.phrase)”"
+            model.routeWarning = false
+        case .unclear(let why):
+            spokenRoute = nil
+            model.routeNote = why + " · not switching"
+            model.routeWarning = true
+        case .none:
+            spokenRoute = nil
+            model.routeNote = ""
+        }
+        if spokenRoute?.target != before {
+            model.targetPulse += 1
+            log.info("spoken route: \(self.spokenRoute == nil ? "none" : self.sendsToCursor ? "cursor" : "session", privacy: .public)")
+        }
+        updateBarControls()
+    }
+
+    /// Sessions that can be named, looked up when a recording starts.
+    private func loadRouteCandidates() {
+        let agents = sessionsNow()
+        routeAgents = Dictionary(agents.map { ($0.paneID, $0) }, uniquingKeysWith: { a, _ in a })
+        routeCandidates = agents.map { agent in
+            let title = agent.displayName.components(separatedBy: " · ").first ?? agent.displayName
+            return Routing.Candidate(id: agent.paneID, names: [agent.folderName, title])
+        }
+    }
+
+    /// A click or a shortcut picked the destination: it beats anything said in this message.
+    private func dismissSpokenRoute() {
+        guard state != .idle else { return }
+        routeDismissed = true
+        spokenRoute = nil
+        model.routeNote = ""
+        model.targetPulse += 1
     }
 
     /// "⌃⌥↑↓" for the usual pair, otherwise both shortcuts.
@@ -306,6 +359,10 @@ final class AppController: NSObject, NSMenuDelegate {
         composer = Composer()
         beforeCleanup = nil
         afterCleanup = nil
+        spokenRoute = nil
+        routeDismissed = false
+        model.routeNote = ""
+        if settings.spokenRouting { loadRouteCandidates() }
         recordingID = Self.stamp()
         recordingStart = Date()
         model.phase = .listening
@@ -354,6 +411,7 @@ final class AppController: NSObject, NSMenuDelegate {
         guard gen == generation, state != .idle else { return }
         composer.updateTranscript(text, newWordStartTimes: ends, at: time)
         model.text = composer.render()
+        evaluateRoute()
     }
 
     private func userEdited(_ text: String) {
@@ -415,6 +473,8 @@ final class AppController: NSObject, NSMenuDelegate {
                 composer.finish(at: final.time)
                 model.text = composer.render()
                 log.info("listening stopped: \(Cleanup.wordCount(self.model.text)) words")
+                evaluateRoute()
+                if let route = spokenRoute { setText(route.remaining) }  // the phrase isn't for Claude
             }
         }
         speechStart = nil
@@ -511,7 +571,7 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func reviewHint() -> String {
-        let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
+        let send = sendsToCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel"]
         if afterCleanup != nil { parts.append("\(settings.cleanupShortcut.label) switches to \(model.text == afterCleanup ? "your original" : "the tidied text")") }
         return parts.joined(separator: "  ·  ")
@@ -533,12 +593,14 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         let rendered = composer.render()
         let id = recordingID
+        let toCursor = sendsToCursor, sendTo = sendTarget, routed = spokenRoute != nil
+        defer { if state == .idle { spokenRoute = nil } }  // a new recording has its own
         state = .idle  // you can start the next message while this one is delivered
         log.info("deliver: \(pieces.count) pieces")
         guard !pieces.isEmpty else { panel.dismiss(); return }
         saveLastMessage(rendered)
 
-        if settings.insertAtCursor {
+        if toCursor {
             panel.dismiss()  // hand the keyboard back to the app with the cursor
             if await CursorInserter.insert(pieces) {
                 if state == .idle { flash(.sent, for: 1.0) }
@@ -547,7 +609,7 @@ final class AppController: NSObject, NSMenuDelegate {
             }
             return
         }
-        guard let target = settings.pinned else {
+        guard let target = sendTo else {
             flash(.error("Open a session first: click the menu-bar icon and pick a Claude session"))
             return
         }
@@ -560,7 +622,7 @@ final class AppController: NSObject, NSMenuDelegate {
         pendingSends -= 1
         switch result {
         case .success(let found):
-            if found != settings.pinned, settings.pinned?.sessionID == found.sessionID {
+            if !routed, found != settings.pinned, settings.pinned?.sessionID == found.sessionID {
                 settings.pinned = found
                 storage.save(settings)
             }
@@ -590,6 +652,7 @@ final class AppController: NSObject, NSMenuDelegate {
         guard state == .recording || state == .reviewing else { return }
         stopCapture()
         state = .idle
+        spokenRoute = nil
         generation += 1
         let start = speechStart
         speechStart = nil
@@ -630,7 +693,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Bar helpers
 
     private func refreshHint() {
-        let send = settings.insertAtCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
+        let send = sendsToCursor ? "insert" : settings.submitOnSecondPress ? "send" : "paste"
         var parts = ["\(hotKeyLabel) to \(send)", "\(settings.cancelShortcut.label) to cancel", "⌘⌃⇧4 adds a screenshot"]
         if cleanupChoice != nil { parts.insert("\(settings.cleanupShortcut.label) to tidy up", at: 2) }
         switch speechState {
@@ -652,6 +715,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.targetName = targetLabel
         model.showsSubmit = false
         model.targetShortcuts = ""
+        model.routeNote = ""
         panel.present()
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -675,7 +739,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Menu
 
     private func updateStatusTitle() {
-        statusItem.button?.title = targetLabel.isEmpty ? "" : " " + targetLabel
+        statusItem.button?.title = statusLabel.isEmpty ? "" : " " + statusLabel
         statusItem.button?.imagePosition = .imageLeading
     }
 
@@ -737,6 +801,13 @@ final class AppController: NSObject, NSMenuDelegate {
                 menu.addItem(disabled("\(p.name) (not running)"))
             }
         }
+        if settings.spokenRouting {
+            let name = agents.first?.folderName ?? "showtell"
+            menu.addItem(.separator())
+            menu.addItem(disabled("Or say it, for one message:"))
+            menu.addItem(disabled("   “For the \(name) session, …”   “Send to \(name): …”"))
+            menu.addItem(disabled("   “… this should go to \(name)”   “… paste it at the cursor”"))
+        }
     }
 
     /// Sessions for a menu, built on the spot: herdr answers in milliseconds, while tmux and
@@ -782,6 +853,7 @@ final class AppController: NSObject, NSMenuDelegate {
     @objc private func pick(_ sender: NSMenuItem) {
         guard let pane = sender.representedObject as? String,
               let agent = sessionsNow().first(where: { $0.paneID == pane }) else { return }
+        dismissSpokenRoute()
         settings.pinned = PinnedTarget(agent: agent)
         settings.insertAtCursor = false
         storage.save(settings)
@@ -794,6 +866,7 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     @objc private func pickCursor() {
+        dismissSpokenRoute()
         settings.insertAtCursor = true
         storage.save(settings)
         updateStatusTitle()
@@ -804,8 +877,19 @@ final class AppController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Where the message goes, as shown in the bar and the menu bar.
-    private var targetLabel: String { settings.insertAtCursor ? "Cursor" : settings.pinned?.name ?? "" }
+    /// Where this message goes: a spoken destination, else the open session or the cursor.
+    private var sendsToCursor: Bool {
+        if let route = spokenRoute { return route.target == .cursor }
+        return settings.insertAtCursor
+    }
+    private var sendTarget: PinnedTarget? {
+        if case .session(let id)? = spokenRoute?.target, let agent = routeAgents[id] { return PinnedTarget(agent: agent) }
+        return settings.pinned
+    }
+    /// Where the message goes, as shown in the bar.
+    private var targetLabel: String { sendsToCursor ? "Cursor" : sendTarget?.name ?? "" }
+    /// The open session, as shown in the menu bar.
+    private var statusLabel: String { settings.insertAtCursor ? "Cursor" : settings.pinned?.name ?? "" }
     /// The repo whose `.github/dictation.md` adds words: the open session's, unless inserting at the cursor.
     private var repoPath: String? { settings.insertAtCursor ? nil : settings.pinned?.cwd }
 

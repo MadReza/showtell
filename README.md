@@ -30,6 +30,24 @@ terms boosted.
 
 **⌃⌥⌫** cancels a recording. Every shortcut can be changed in Settings.
 
+### Say where it goes
+
+Name a session at the start or the end of a message and that message goes there instead:
+
+| At the start | At the end |
+|---|---|
+| “For the showtell session, …” | “… this should go to showtell” |
+| “Showtell session: …” | “… send this to the showtell session” |
+| “Send to showtell, …” | “… for the showtell session” |
+| “At the cursor: …” | “… paste it at the cursor” |
+
+Use the session's folder or title; close-sounding names count (“Chotel” finds showtell). The
+phrase is taken out of the message. The session name in the bar pulses and shows a microphone as
+soon as the phrase is heard, with what was heard beside it. Only that message goes there; the open
+session stays. A name in the middle of a sentence never switches, and a name that matches no
+session or several changes nothing (the bar says why). A click or ⌃⌥↑/↓ overrides it. The
+session menus and Settings → Say where it goes list the phrases; switch it off there.
+
 ### Tidy up text (optional)
 
 Pick a model in Settings → **Tidy up text** and Showtell can fix punctuation, filler words ("um",
@@ -67,6 +85,7 @@ Menu → **Settings…** (⌘,):
   session's repository can add terms in `.github/dictation.md` (inline code and the first words
   of list items, the same file VS Code and localvoxtral read).
 - **Replacements.** `wrong => right` lines applied to the finished text.
+- **Say where it goes.** Spoken destinations on or off, with the phrases.
 - **Tidy up text.** The model, whether every message is tidied, and the tidy-up shortcut.
 
 Files live in `~/Library/Application Support/Showtell/`: `settings.json`, `vocabulary.txt`,
