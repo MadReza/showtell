@@ -329,3 +329,57 @@ final class EventLog: @unchecked Sendable {
         #expect(back == s)
     }
 }
+
+@Suite struct RoutingTests {
+    let sessions = [
+        Routing.Candidate(id: "w89:p1", names: ["showtell", "showtell"]),
+        Routing.Candidate(id: "w88:p1", names: ["claude-banner", "claude-banner"]),
+        Routing.Candidate(id: "w1:p1", names: ["firstmate", "Presentation file location"]),
+        Routing.Candidate(id: "wA:p3", names: ["firstmate", "Firstmate operational inbox message"]),
+    ]
+
+    func route(_ text: String) -> Routing.Route? {
+        if case .route(let r) = Routing.find(in: text, candidates: sessions) { return r }
+        return nil
+    }
+
+    @Test func startPhrases() {
+        let r = route("For the Showtell session, do XYZ.")
+        #expect(r?.target == .session("w89:p1") && r?.remaining == "Do XYZ.")
+        #expect(route("Showtell session: look at the bar")?.remaining == "Look at the bar")
+        #expect(route("Send to claude banner, fix the colours")?.target == .session("w88:p1"))
+        #expect(route("for the showtell session do xyz")?.remaining == "Do xyz")
+        #expect(route("At the cursor: hello there")?.target == .cursor)
+    }
+
+    @Test func endPhrasesAndMishearings() {
+        let r = route("I need you to do XYZ with the XYZ, this should go to Chotel.")
+        #expect(r?.target == .session("w89:p1"))
+        #expect(r?.remaining == "I need you to do XYZ with the XYZ.")
+        #expect(route("Fix the colours and send this to cloud banner")?.target == .session("w88:p1"))
+        let the = route("Write a short haiku about tea, this should go to the showtell session")
+        #expect(the?.target == .session("w89:p1") && the?.remaining == "Write a short haiku about tea")
+        #expect(route("Send to the showtell session, fix it")?.remaining == "Fix it")
+        #expect(route("Rename the file, for the showtell session.")?.remaining == "Rename the file.")
+        let c = route("Thanks for the help, paste this at the cursor.")
+        #expect(c?.target == .cursor && c?.remaining == "Thanks for the help.")
+    }
+
+    @Test func ordinaryTextDoesNotRoute() {
+        #expect(route("For the record, the Showtell bar is cut off.") == nil)
+        #expect(route("The showtell session has a bug in the bar") == nil)
+        #expect(route("Showtell, do XYZ") == nil)
+        #expect(route("look at this [📷 1] for the showtell session") != nil)
+        #expect(Routing.find(in: "", candidates: sessions) == .none)
+    }
+
+    @Test func unclearNamesChangeNothing() {
+        if case .unclear = Routing.find(in: "Fix it, send this to firstmate", candidates: sessions) {} else {
+            Issue.record("two firstmate sessions should be unclear")
+        }
+        if case .unclear = Routing.find(in: "Send to zebra, fix it", candidates: sessions) {} else {
+            Issue.record("an unknown name should be unclear")
+        }
+        #expect(route("Fix it, send this to presentation file location")?.target == .session("w1:p1"))
+    }
+}
