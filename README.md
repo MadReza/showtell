@@ -29,7 +29,18 @@ terms boosted.
    without pressing Enter. Both choices stay for the next message.
 5. Tap **left ⌥** again. The message is pasted into the session (each screenshot becomes an
    `[Image #n]` chip) and sent. If Claude is busy, Claude Code queues it. If Claude is showing a
-   dialog, Showtell waits.
+   dialog, the message is held, and the bar says so (a small panel under the bar if you are
+   already recording the next one): **Held: showtell is asking a question**, or **is waiting on a
+   permission prompt**. Choose:
+   - **Answer the question**: only for a question with a “Type something” option. Showtell
+     types your words there and sends them as your answer. A question takes only words: any
+     screenshots stay in History. If the dialog asks several questions, only the one on screen is
+     answered; the rest, and the final **Submit answers**, are left to you.
+   - **Send after**: pasted into the prompt once the dialog closes.
+   - **Cancel**: not sent; History keeps it, marked cancelled.
+
+   Left undecided, it waits up to 10 minutes. Showtell never presses anything in a permission
+   prompt.
 
 **⌃⌥⌫** cancels a recording. Every shortcut can be changed in Settings.
 
@@ -175,6 +186,7 @@ Debug tools:
 ```sh
 swift run showtell-cli sessions                                   # Claude sessions in herdr
 swift run showtell-cli send <pane-id> --submit "look" @/tmp/a.png # deliver like the app does
+swift run showtell-cli send <pane-id> --if-held answer "Tea"       # if a dialog shows: answer | after | cancel
 swift run showtell-cli toggle | cancel | tidy | settings | history # drive the running app
 swift run showtell-cli submit | next | previous                   # the Send checkbox, the session shortcuts
 swift run showtell-cli target cursor | <pane-id>                  # change where it sends
@@ -199,6 +211,14 @@ gets `paste-buffer -p` per piece and `send-keys Enter`; iTerm2 gets AppleScript 
 paste markers, then a carriage return. A session waiting on a dialog (status `waiting`) is not
 pasted into. macOS asks once for permission to control iTerm2. A session that is in herdr is
 always reached through herdr.
+
+**Dialogs:** while a session shows a dialog (herdr status `blocked`), Showtell reads its screen to
+tell a question (AskUserQuestion) from a permission prompt. To answer a question, it moves to the
+“Type something” option with the arrow keys (a number key on another option would pick that
+option), checks on screen that the focus is there, types the words in short pieces, checks that
+they show, and presses Enter. In a multi-select it presses Down to the **Next**/**Submit** row
+first, because Enter there would untick the answer. Then it reads the screen again to see that
+the question has gone. If any check fails, it stops and says why.
 
 **Text already in the prompt:** before pasting, Showtell reads the pane's screen and looks at
 Claude Code's input box (the `❯` line between the two rules; the dim placeholder doesn't count).

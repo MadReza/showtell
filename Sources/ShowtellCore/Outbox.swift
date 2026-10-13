@@ -25,10 +25,64 @@ public struct PinnedTarget: Codable, Equatable, Sendable {
 }
 
 public enum DeliveryEvent: Equatable, Sendable {
+    /// A dialog opened after the message was pasted; Enter waits for it to close.
     case waitingForApproval(String)
+    /// A message is held: its session shows a dialog. Sent again whenever what can be done changes.
+    case held(Hold)
+    /// The message with this id is no longer held: the dialog closed, or you chose what to do.
+    case released(String)
     case sending(String)
     case delivered(String)
     case failed(String)
+}
+
+/// A message held back because its session shows a dialog, and what you can do about it.
+public struct Hold: Equatable, Sendable {
+    public var messageID: String
+    public var name: String
+    public var kind: Dialog.Kind
+    /// The dialog is a question with a place to type, and the message has words to type there.
+    public var canAnswer: Bool
+    /// The message has pictures, which can't go into a dialog.
+    public var hasPictures: Bool
+    /// You chose to send it once the dialog closes.
+    public var sendAfter: Bool
+
+    public init(messageID: String, name: String, kind: Dialog.Kind, canAnswer: Bool, hasPictures: Bool, sendAfter: Bool) {
+        self.messageID = messageID
+        self.name = name
+        self.kind = kind
+        self.canAnswer = canAnswer
+        self.hasPictures = hasPictures
+        self.sendAfter = sendAfter
+    }
+
+    /// "Held: showtell is asking a question".
+    public var title: String {
+        switch kind {
+        case .question: return "Held: \(name) is asking a question"
+        case .permission: return "Held: \(name) is waiting on a permission prompt"
+        case .other: return "Held: \(name) is showing a dialog"
+        }
+    }
+}
+
+/// What to do with a held message.
+public enum HoldChoice: Sendable {
+    /// Type its words as the answer to the question on screen.
+    case answer
+    /// Paste it once the dialog closes, however long that takes.
+    case sendAfter
+    /// Drop it.
+    case cancel
+}
+
+/// How a message was delivered.
+public struct Delivered: Equatable, Sendable {
+    /// The target as found (its pane id may have changed).
+    public var target: PinnedTarget
+    /// Set when its words went as the answer to a question instead of into the prompt.
+    public var answered: AnsweredQuestion?
 }
 
 public enum DeliveryError: Error, Equatable, CustomStringConvertible {
@@ -40,6 +94,10 @@ public enum DeliveryError: Error, Equatable, CustomStringConvertible {
     case promptNotCleared(String)
     /// A draft taller than the box was being cleared, and its first rows never came into view.
     case draftNotRead(String)
+    /// You cancelled it while it was held.
+    case cancelled(String)
+    /// Typing it as the answer to the session's question stopped, and why.
+    case notAnswered(String, String)
 
     public var description: String {
         switch self {
@@ -48,6 +106,8 @@ public enum DeliveryError: Error, Equatable, CustomStringConvertible {
         case .promptNotCleared(let n): return "\(n)'s prompt already had text that couldn't be cleared"
         case .draftNotRead(let n): return "\(n)'s prompt had text whose start couldn't be read; message not sent"
         case .earlierMessageFailed: return "an earlier message failed partway, so this one was held back"
+        case .cancelled(let n): return "cancelled while \(n) showed a dialog"
+        case .notAnswered(let n, let why): return "not typed as the answer to \(n)'s question: \(why)"
         }
     }
 }
@@ -107,7 +167,9 @@ enum TakenDraft {
 /// Rules verified against Claude Code 2.1.296:
 /// - every screenshot path is its own bracketed paste, then a pause until its chip appears;
 /// - a message sent while Claude works is queued by Claude Code with its images;
-/// - nothing is pasted while the agent shows a dialog (herdr status `blocked`);
+/// - nothing is pasted while the agent shows a dialog (herdr status `blocked`): the message is held, and
+///   `held` events say so, until you choose (`decide`): send it after, cancel it, or type its words as the
+///   answer to the question on screen;
 /// - text already in the prompt is taken out first, or it would be sent along with the message: stashed
 ///   with Ctrl+S, which Claude Code undoes after the submit; or, when Claude Code already holds a stash
 ///   (it keeps one), cleared, and typed back once the message is sent and the prompt is empty.
@@ -154,20 +216,21 @@ public actor Outbox {
     }
 
     /// Queues a message behind any message still being delivered. Returns once it is delivered.
+    /// `id` names it in `held` events and to `decide`.
     /// `onDraft` hears about text that was in the prompt: just before it is cleared, then whether it was put back.
     @discardableResult
     public func enqueue(
-        _ pieces: [Piece], to target: PinnedTarget, submit: Bool,
+        _ pieces: [Piece], to target: PinnedTarget, submit: Bool, id: String = UUID().uuidString,
         onDraft: (@Sendable (DraftEvent) -> Void)? = nil
-    ) async -> Result<PinnedTarget, Error> {
+    ) async -> Result<Delivered, Error> {
         let previous = tail
         lastTicket += 1
         let ticket = lastTicket
-        let task = Task<Result<PinnedTarget, Error>, Never> {
+        let task = Task<Result<Delivered, Error>, Never> {
             await previous?.value
             if ticket <= self.haltThrough { return .failure(DeliveryError.earlierMessageFailed) }
             do {
-                return .success(try await self.deliver(pieces, to: target, submit: submit, onDraft: onDraft))
+                return .success(try await self.deliver(pieces, to: target, submit: submit, id: id, onDraft: onDraft))
             } catch {
                 if self.pastedSomething { self.haltThrough = self.lastTicket }
                 self.emit(.failed(String(describing: error)))
@@ -178,17 +241,28 @@ public actor Outbox {
         return await task.value
     }
 
+    /// What to do with the held message `id`. Ignored once it is no longer held.
+    public func decide(_ id: String, _ choice: HoldChoice) {
+        guard heldIDs.contains(id) else { return }
+        choices[id] = choice
+    }
+
     private func emit(_ event: DeliveryEvent) { onEvent?(event) }
     private var pastedSomething = false
+    private var heldIDs: Set<String> = []
+    private var choices: [String: HoldChoice] = [:]
 
-    /// Returns the target as found (its pane id may have changed).
     func deliver(
-        _ pieces: [Piece], to target: PinnedTarget, submit: Bool,
+        _ pieces: [Piece], to target: PinnedTarget, submit: Bool, id: String = UUID().uuidString,
         onDraft: (@Sendable (DraftEvent) -> Void)? = nil
-    ) async throws -> PinnedTarget {
-        guard !pieces.isEmpty else { return target }
+    ) async throws -> Delivered {
+        guard !pieces.isEmpty else { return Delivered(target: target) }
         pastedSomething = false
-        var current = try await waitUntilReady(target)
+        var current: PinnedTarget
+        switch try await waitUntilReady(target, holding: id, pieces: pieces) {
+        case .ready(let found): current = found
+        case .answer(let found): return try await answer(pieces, in: found)
+        }
         emit(.sending(current.name))
         let taken = try await takeDraft(current, onDraft: onDraft)
 
@@ -207,7 +281,7 @@ public actor Outbox {
         if submit {
             await sleep(timing.beforeEnter)
             // A dialog may have opened while we pasted; Enter would answer it.
-            current = try await waitUntilReady(current)
+            if case .ready(let found) = try await waitUntilReady(current) { current = found }
             try await transport.pressEnter(pane: current.paneID)
         }
         emit(.delivered(current.name))
@@ -235,7 +309,7 @@ public actor Outbox {
                 }
             }
         }
-        return current
+        return Delivered(target: current)
     }
 
     /// Takes text out of the prompt, and checks on screen that the prompt is empty: stashes it, or clears
@@ -362,19 +436,142 @@ public actor Outbox {
         return nil
     }
 
-    private func waitUntilReady(_ target: PinnedTarget) async throws -> PinnedTarget {
+    private enum Ready {
+        case ready(PinnedTarget)
+        /// You chose to type the message as the answer to the question on screen.
+        case answer(PinnedTarget)
+    }
+
+    /// Waits while the session shows a dialog. With `id` the message is held: `held` events say what the
+    /// dialog is and what can be done, and your choice is taken; left undecided, it gives up after
+    /// `blockedTimeout`. Without (a dialog that opened after pasting), it waits as long as that.
+    private func waitUntilReady(_ target: PinnedTarget, holding id: String? = nil, pieces: [Piece] = []) async throws -> Ready {
         var waited = 0.0
+        var hold: Hold?
+        defer {
+            if let id, hold != nil {
+                heldIDs.remove(id)
+                choices[id] = nil
+                emit(.released(id))
+            }
+        }
         while true {
             let agents = try await transport.listAgents()
             guard let agent = target.locate(in: agents) else { throw DeliveryError.targetGone(target.name) }
             var updated = target
             updated.paneID = agent.paneID
             updated.terminalID = agent.terminalID
-            if agent.status.acceptsInput { return updated }
-            if waited == 0 { emit(.waitingForApproval(target.name)) }
-            if waited >= timing.blockedTimeout { throw DeliveryError.stillBlocked(target.name) }
+            if agent.status.acceptsInput { return .ready(updated) }
+            guard let id else {
+                if waited == 0 { emit(.waitingForApproval(target.name)) }
+                if waited >= timing.blockedTimeout { throw DeliveryError.stillBlocked(target.name) }
+                await sleep(timing.blockedPoll)
+                waited += timing.blockedPoll
+                continue
+            }
+
+            let dialog = (try? await transport.readScreen(pane: updated.paneID)).flatMap(Dialog.read)
+            var sendAfter = hold?.sendAfter ?? false
+            switch choices.removeValue(forKey: id) {
+            case .cancel?: throw DeliveryError.cancelled(target.name)
+            // Only for the question it was offered for: never into a permission prompt or another dialog.
+            case .answer? where dialog?.canAnswer == true && Self.answerText(pieces) != nil: return .answer(updated)
+            case .sendAfter?: sendAfter = true
+            default: break
+            }
+            // A screen caught mid-redraw keeps what it was.
+            let now = Hold(messageID: id, name: target.name, kind: dialog?.kind ?? hold?.kind ?? .other,
+                           canAnswer: dialog?.canAnswer == true && Self.answerText(pieces) != nil,
+                           hasPictures: pieces.contains { if case .image = $0 { return true } else { return false } },
+                           sendAfter: sendAfter)
+            if now != hold {
+                hold = now
+                heldIDs.insert(id)
+                emit(.held(now))
+            }
+            if !sendAfter, waited >= timing.blockedTimeout { throw DeliveryError.stillBlocked(target.name) }
             await sleep(timing.blockedPoll)
             waited += timing.blockedPoll
         }
+    }
+
+    // MARK: Answering a question
+
+    /// The message's words, as one line to type in a question's free-text option; pictures left out.
+    /// Nil when it has no words.
+    static func answerText(_ pieces: [Piece]) -> String? {
+        let words = pieces.compactMap { piece -> String? in
+            switch piece {
+            case .text(let s), .copied(let s): return s
+            case .image: return nil
+            }
+        }
+        let line = words.joined(separator: " ")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        return line.isEmpty ? nil : line
+    }
+
+    private func readDialog(_ pane: String) async throws -> Dialog? {
+        Dialog.read(try await transport.readScreen(pane: pane))
+    }
+
+    /// Types the message's words in the question's free-text option and sends them, checking the screen
+    /// at each step. The focus moves with arrows (a number key on another option would pick it), and
+    /// nothing is pressed unless the screen shows that question with the focus where it should be.
+    /// With several questions only the one on screen is answered; the rest stay for you.
+    private func answer(_ pieces: [Piece], in target: PinnedTarget) async throws -> Delivered {
+        let pane = target.paneID
+        func stop(_ why: String) -> DeliveryError { .notAnswered(target.name, why) }
+        guard let text = Self.answerText(pieces) else { throw stop("the message has no words") }
+        emit(.sending(target.name))
+        guard let asked = try await readDialog(pane), let free = asked.freeText, let at = asked.focused else {
+            throw stop("its question has no place to type an answer")
+        }
+        func sameQuestion(_ d: Dialog?) -> Bool { d?.kind == .question && d?.question == asked.question && d?.tabs == asked.tabs }
+
+        let steps = free.number - at.number
+        if steps != 0 {
+            try await transport.sendKeys(Array(repeating: steps > 0 ? .down : .up, count: abs(steps)), pane: pane)
+            await sleep(timing.afterClear)
+        }
+        var typed = false
+        for piece in DraftRestore.pieces(text, size: timing.typedPiece) {
+            // Typed anywhere but the free-text option, letters and digits would pick options.
+            let now = try await readDialog(pane)
+            guard sameQuestion(now), now?.focused?.number == free.number else {
+                throw stop(typed ? "the question changed while it was typed; part of it is in the dialog"
+                    : "couldn't move to its “\(free.label)” option")
+            }
+            try await transport.typeText(piece, pane: pane)
+            typed = true
+            await sleep(timing.afterTypedPiece)
+        }
+        await sleep(timing.afterClear)
+        guard Dialog.shows(text, on: try await transport.readScreen(pane: pane)) else {
+            throw stop("typed, but the question doesn't show it: check it there before pressing Enter")
+        }
+        if asked.multiSelect {
+            // Enter would untick the answer; the row under it (Next or Submit) moves on.
+            try await transport.sendKeys([.down], pane: pane)
+            await sleep(timing.afterClear)
+            guard let row = try await readDialog(pane)?.focusedRow, Dialog.actionRows.contains(row) else {
+                throw stop("typed, but its Next button wasn't found: press it there yourself")
+            }
+        }
+        try await transport.pressEnter(pane: pane)
+
+        for _ in 0..<timing.emptyChecks {
+            await sleep(timing.afterClear)
+            let now = try await readDialog(pane)
+            if now == nil || !sameQuestion(now) {
+                emit(.delivered(target.name))
+                return Delivered(target: target, answered: AnsweredQuestion(
+                    question: asked.question,
+                    picturesLeftOut: pieces.contains { if case .image = $0 { return true } else { return false } },
+                    moreLeft: now != nil))
+            }
+        }
+        throw stop("the question stayed open after Enter")
     }
 }

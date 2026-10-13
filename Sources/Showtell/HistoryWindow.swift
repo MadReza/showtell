@@ -417,7 +417,8 @@ struct HistoryRow: View {
             }
             Text(entry.preview.isEmpty ? "(pictures only)" : entry.preview)
                 .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
-            if !entry.shots.isEmpty || !entry.clips.isEmpty || entry.failure != nil || entry.tidyDroppedWords {
+            if !entry.shots.isEmpty || !entry.clips.isEmpty || entry.failure != nil || entry.tidyDroppedWords
+                || entry.cancelled == true || entry.answered != nil {
                 HStack(spacing: 8) {
                     if !entry.shots.isEmpty { Label("\(entry.shots.count)", systemImage: "photo") }
                     if !entry.clips.isEmpty { Label("\(entry.clips.count)", systemImage: "doc.on.clipboard") }
@@ -429,6 +430,8 @@ struct HistoryRow: View {
                     if entry.failure != nil {
                         Label("Not sent", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     }
+                    if entry.cancelled == true { Label("Cancelled", systemImage: "xmark.circle") }
+                    if entry.answered != nil { Label("Answer", systemImage: "questionmark.bubble") }
                 }
                 .font(.caption2).foregroundStyle(.secondary)
             }
@@ -451,6 +454,28 @@ struct EntryDetail<Destinations: View>: View {
                     .font(.callout).foregroundStyle(.orange)
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+            if entry.cancelled == true {
+                Label("Cancelled while the session showed a dialog: not sent.", systemImage: "xmark.circle")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+            if let answer = entry.answered {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Typed as the answer to “\(answer.question)”", systemImage: "questionmark.bubble")
+                        .font(.callout.weight(.medium))
+                    if answer.picturesLeftOut {
+                        Text("A question takes only words: the pictures below weren't sent.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if answer.moreLeft {
+                        Text("The dialog had more to answer or submit; that was left to you.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
             if let draft = entry.clearedDraft {
                 VStack(alignment: .leading, spacing: 6) {
@@ -549,6 +574,8 @@ struct EntryDetail<Destinations: View>: View {
 
     private var how: String {
         if entry.failure != nil { return "Not delivered" }
+        if entry.cancelled == true { return "Cancelled, not sent" }
+        if entry.answered != nil { return "Typed as the answer to its question" }
         switch entry.destination {
         case .cursor: return "Inserted at the cursor"
         case .session: return entry.submitted ? "Pasted and sent with Enter" : "Pasted, Enter not pressed"
