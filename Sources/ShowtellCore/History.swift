@@ -13,6 +13,17 @@ public enum HistoryDestination: Codable, Equatable, Sendable {
     }
 }
 
+/// What became of text that was already typed in the session's prompt when a message was pasted.
+public enum DraftOutcome: String, Codable, Equatable, Sendable {
+    /// Stashed with Ctrl+S; Claude Code put it back when the message was sent.
+    case restoredFromStash
+    /// Cleared, then typed back after the message was sent.
+    case retyped
+    /// Stashed, and the message was left unsent: Claude Code puts it back once you send it.
+    case leftStashed
+    case notRestored
+}
+
 /// One message Showtell sent: the text as the bar showed it (with `[📷 n]` and `[📋 n]` markers),
 /// its screenshots (file names in shots/) and its copied text.
 public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
@@ -47,6 +58,10 @@ public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
     public var failure: String?
     /// Text that was already in the session's prompt and was cleared before pasting.
     public var clearedDraft: String?
+    /// How the cleared text went back into the prompt, or that it didn't.
+    public var draftOutcome: DraftOutcome?
+    /// Why the cleared text was not put back, if it wasn't.
+    public var draftNotRestored: String?
 
     public init(id: String = UUID().uuidString, date: Date = Date(), destination: HistoryDestination, text: String,
                 shots: [Shot] = [], clips: [Clip] = [], submitted: Bool, failure: String? = nil,
@@ -141,6 +156,15 @@ public struct HistoryStore: Sendable {
         var entries = load()
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i].clearedDraft = draft
+        try save(entries)
+    }
+
+    /// Notes how the cleared text went back into the prompt, or why it didn't.
+    public func setDraftOutcome(_ id: String, _ outcome: DraftOutcome, reason: String? = nil) throws {
+        var entries = load()
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[i].draftOutcome = outcome
+        entries[i].draftNotRestored = outcome == .notRestored ? reason : nil
         try save(entries)
     }
 
