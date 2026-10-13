@@ -26,6 +26,8 @@ actor SpeechEngine {
     private var feed: AsyncStream<AVAudioPCMBuffer>.Continuation?
     private var configObserver: NSObjectProtocol?
     private let clock = AudioClock()
+    private var vad: VadManager?
+    private var meter: SpeechMeter?
 
     init(onState: @escaping @Sendable (State) -> Void) {
         self.onState = onState
@@ -39,6 +41,8 @@ actor SpeechEngine {
             setState(.loading("Loading word booster…"))
             ctcModels = try await CtcModels.downloadAndLoad()
             tokenizer = try await CtcTokenizer.load()
+            // Tells a silent recording from speech; without it, loudness alone decides.
+            vad = try? await VadManager()
             setState(.ready)
         } catch {
             setState(.failed("Speech model failed to load: \(error.localizedDescription)"))
@@ -58,6 +62,8 @@ actor SpeechEngine {
         let format = engine.inputNode.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw NoMicrophone() }
         clock.reset(rate: format.sampleRate)
+        let meter = SpeechMeter(vad: vad)
+        self.meter = meter
 
         let (stream, feed) = AsyncStream<AVAudioPCMBuffer>.makeStream()
         self.feed = feed
@@ -87,6 +93,7 @@ actor SpeechEngine {
             var last = Date.distantPast
             for await buffer in stream {
                 try? await asr.appendAudio(buffer)
+                await meter.add(buffer)
                 clock.didProcess(buffer.frameLength, rate: buffer.format.sampleRate)
                 guard Date().timeIntervalSince(last) >= 0.25, !Task.isCancelled else { continue }
                 last = Date()
@@ -99,12 +106,14 @@ actor SpeechEngine {
     }
 
     /// Stops listening and returns the final transcript (the tail is rescored),
-    /// the last word timings and the audio time it covers.
-    func stop() async -> (text: String, wordStarts: [Double], time: Double) {
+    /// the last word timings, the audio time it covers and the seconds of it that were speech.
+    func stop() async -> (text: String, wordStarts: [Double], time: Double, speech: Double) {
         await stopAudio(drain: true)
         var text = await asr.getPartialTranscript()
         if let final = try? await asr.finish() { text = final }
-        return (text, await newWordStarts(), clock.processed)
+        let speech = await meter?.speechSeconds() ?? 0
+        meter = nil
+        return (text, await newWordStarts(), clock.processed, speech)
     }
 
     func cancel() async {
@@ -114,24 +123,26 @@ actor SpeechEngine {
     }
 
     /// Self-test: streams an audio file through the same recogniser, in quarter-second chunks.
-    func transcribeFile(_ url: URL, terms: [VocabularyTerm], onUpdate: Update) async throws -> String {
+    func transcribeFile(_ url: URL, terms: [VocabularyTerm], onUpdate: Update) async throws -> (text: String, speech: Double) {
         try await asr.reset()
         sawFirstToken = false
         await configureBoost(terms)
         let file = try AVAudioFile(forReading: url)
         let format = file.processingFormat
         let chunk = AVAudioFrameCount(format.sampleRate * 0.25)
+        let meter = SpeechMeter(vad: vad)
         while file.framePosition < file.length {
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { break }
             try file.read(into: buffer, frameCount: chunk)
             try await asr.appendAudio(buffer)
+            await meter.add(buffer)
             try await asr.processBufferedAudio()
             let seconds = Double(file.framePosition) / format.sampleRate
             onUpdate(await asr.getPartialTranscript(), await newWordStarts(), seconds)
         }
         let text = try await asr.finish()
         onUpdate(text, await newWordStarts(), Double(file.length) / format.sampleRate)
-        return text
+        return (text, await meter.speechSeconds())
     }
 
     /// Start times of the words begun since the last call. FluidAudio's own word grouping restarts
@@ -179,6 +190,65 @@ actor SpeechEngine {
     private func setState(_ s: State) {
         state = s
         onState(s)
+    }
+}
+
+/// Measures how much of a recording is speech, as it is captured: the loudness of each 20 ms frame,
+/// and the voice detector's verdict on each 256 ms chunk (until it has heard plenty).
+actor SpeechMeter {
+    private let vad: VadManager?
+    private let converter = AudioConverter()
+    private var vadState: VadStreamState?
+    private var levels: [Float] = []
+    private var frame: [Float] = []
+    private var chunk: [Float] = []
+    private var probabilities: [Float] = []
+    private var vadFailed = false
+
+    init(vad: VadManager?) {
+        self.vad = vad
+    }
+
+    func add(_ buffer: AVAudioPCMBuffer) async {
+        guard let samples = try? converter.resampleBuffer(buffer) else { return }
+        let frameLength = Int(SpeechGate.frameSeconds * Double(VadManager.sampleRate))
+        frame += samples
+        while frame.count >= frameLength {
+            levels.append(SpeechGate.level(of: frame.prefix(frameLength)))
+            frame.removeFirst(frameLength)
+        }
+        guard vad != nil, !vadFailed, vadSeconds < 2 else { chunk = []; return }
+        chunk += samples
+        while chunk.count >= VadManager.chunkSize {
+            await detect(Array(chunk.prefix(VadManager.chunkSize)))
+            chunk.removeFirst(VadManager.chunkSize)
+        }
+    }
+
+    /// Seconds of speech heard, by the voice detector if it ran and by loudness.
+    func speechSeconds() async -> Double {
+        if chunk.count >= VadManager.sampleRate / 10 { await detect(chunk) }  // the last 0.1 s or more
+        chunk = []
+        let energy = SpeechGate.voicedSeconds(levels: levels)
+        guard vad != nil, !vadFailed else { return energy }
+        return SpeechGate.speechSeconds(energy: energy, vad: vadSeconds)
+    }
+
+    private var vadSeconds: Double {
+        SpeechGate.vadSeconds(probabilities: probabilities, chunkSeconds: Double(VadManager.chunkSize) / Double(VadManager.sampleRate))
+    }
+
+    private func detect(_ samples: [Float]) async {
+        guard let vad else { return }
+        do {
+            let state: VadStreamState
+            if let vadState { state = vadState } else { state = await vad.makeStreamState() }
+            let result = try await vad.processStreamingChunk(samples, state: state)
+            vadState = result.state
+            probabilities.append(result.probability)
+        } catch {
+            vadFailed = true
+        }
     }
 }
 
