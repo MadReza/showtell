@@ -7,16 +7,38 @@ import Foundation
 /// Code shows dim suggestions after typed text: both are left out. Without colours (an iTerm2
 /// screen) a lone `Try "…"` line counts as the placeholder.
 ///
-/// Wrapped lines come back as separate lines: the screen can't tell them from typed newlines.
+/// Claude Code wraps the input at the rule's width less 4 columns: between words, dropping the
+/// space, or inside a word too long for a line. A line that ends where the next line's first word
+/// wouldn't have fit is taken as wrapped and joined back; a typed line break that happens to fall
+/// there is joined too.
+///
+/// A draft taller than the box shows only the rows around the cursor, with `❯` on the top one and
+/// nothing to say more are hidden. Claude Code's prompt stash (Ctrl+S) shows `› stashed` above the box.
 public enum PromptInput {
+    /// The rows of the input box as shown, without the prompt sign or the indent.
+    public struct Box: Equatable, Sendable {
+        public var rows: [String]
+        /// `!` in bash mode.
+        public var marker: String
+        /// Columns a row can hold before it wraps.
+        public var width: Int
+        var hasColours: Bool
+
+        /// The typed text the rows show (empty when the box is empty).
+        public var text: String { PromptInput.text(rows, marker: marker, width: width, hasColours: hasColours) }
+    }
+
     /// The typed text (empty when the box is empty), or nil when the screen shows no input box.
     public static func parse(_ screen: String) -> String? {
-        let hasColours = screen.contains("\u{1b}[")
+        read(screen)?.text
+    }
+
+    /// The input box, or nil when the screen shows none.
+    public static func read(_ screen: String) -> Box? {
         let lines = screen.components(separatedBy: "\n").map(visibleText)
         guard let box = box(lines) else { return nil }
-
         var marker = ""
-        var typed: [String] = []
+        var rows: [String] = []
         for (i, line) in lines[box].enumerated() {
             var s = Substring(line)
             if i == 0 {
@@ -28,12 +50,46 @@ public enum PromptInput {
                 var n = 0
                 while n < 2, let c = s.first, isSpace(c) { s = s.dropFirst(); n += 1 }
             }
-            typed.append(String(s).replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression))
+            rows.append(String(s).replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression))
         }
+        return Box(rows: rows, marker: marker, width: lines[box.lowerBound - 1].count - 4,
+                   hasColours: screen.contains("\u{1b}["))
+    }
+
+    /// Whether Claude Code holds a stashed prompt: `› stashed` just above the box.
+    public static func hasStash(_ screen: String) -> Bool {
+        let lines = screen.components(separatedBy: "\n").map(visibleText)
+        guard let box = box(lines) else { return false }
+        return lines[max(0, box.lowerBound - 3)..<(box.lowerBound - 1)].contains { $0.contains("› stashed") }
+    }
+
+    static func text(_ rows: [String], marker: String, width: Int, hasColours: Bool) -> String {
+        var typed = rows
         while typed.last?.isEmpty == true { typed.removeLast() }
-        let text = typed.joined(separator: "\n")
+        let text = unwrap(typed, width: width)
         if !hasColours, typed.count == 1, isPlaceholder(text) { return marker }
         return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? marker : marker + text
+    }
+
+    /// Joins screen rows into the typed text. A full row whose last word runs on into the next row's
+    /// first was a word too long for a row; a row the next word didn't fit on gets back the space the
+    /// wrap took; any other row ends in a line break.
+    static func unwrap(_ rows: [String], width: Int) -> String {
+        var text = ""
+        for (i, row) in rows.enumerated() {
+            text += row
+            guard i + 1 < rows.count else { break }
+            let next = rows[i + 1].prefix { !isSpace($0) }
+            let last = row.reversed().prefix { !isSpace($0) }
+            if width > 0, row.count >= width, last.count + next.count > width {
+                continue
+            } else if width > 0, !row.isEmpty, !next.isEmpty, row.count + 1 + next.count > width {
+                text += " "
+            } else {
+                text += "\n"
+            }
+        }
+        return text
     }
 
     /// How many lines the box spans, for deciding how many clearing rounds to send.
@@ -63,7 +119,7 @@ public enum PromptInput {
     }
 
     static func isPlaceholder(_ text: String) -> Bool {
-        text.hasPrefix("Try \"") && text.hasSuffix("\"")
+        (text.hasPrefix("Try \"") && text.hasSuffix("\"")) || text == "Press up to edit queued messages"
     }
 
     /// The line without escape sequences, carriage returns or dim (SGR 2) text.

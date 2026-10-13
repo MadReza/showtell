@@ -85,10 +85,45 @@ public protocol HerdrTransport: Sendable {
     /// of Claude Code's input, wherever the cursor is, and does nothing to an empty one. These keys only
     /// edit the input: unlike Ctrl+C, Ctrl+D or Esc they can't interrupt, exit or open a menu.
     func sendClearKeys(pane: String, rounds: Int) async throws
+    /// Presses the keys in order.
+    func sendKeys(_ keys: [PromptKey], pane: String) async throws
+    /// Types `text` as keystrokes, without paste markers, so Claude Code doesn't fold it into
+    /// `[Pasted text #n]`. A line break goes as LF (Ctrl+J): a new line in Claude Code's input, not Enter.
+    /// Big pieces still arrive at once and read as a paste: send a short piece at a time.
+    func typeText(_ text: String, pane: String) async throws
+    /// Whether `typeText` can type a line break into this pane.
+    func typesLineBreaks(pane: String) -> Bool
 }
 
 /// One round of `sendClearKeys`, as herdr key names.
 public let clearKeysRound = ["ctrl+e", "ctrl+k", "ctrl+u", "backspace"]
+
+/// Keys Showtell presses in Claude Code's prompt besides the clearing rounds. Raw values are herdr's names.
+public enum PromptKey: String, Sendable {
+    /// Stashes a non-empty prompt (Claude Code 2.1); it comes back after the next message is sent.
+    case stash = "ctrl+s"
+    /// Down a row in the input. On the last row it does nothing, unless you are going through history.
+    case down
+    /// To the end of the row.
+    case end = "ctrl+e"
+
+    var tmux: String {
+        switch self {
+        case .stash: return "C-s"
+        case .down: return "Down"
+        case .end: return "C-e"
+        }
+    }
+
+    /// As an AppleScript expression for iTerm2's `write text`.
+    var iterm: String {
+        switch self {
+        case .stash: return "(character id 19)"
+        case .down: return "(character id 27) & \"[B\""
+        case .end: return "(character id 5)"
+        }
+    }
+}
 
 /// Talks to herdr's newline-delimited JSON socket, one request per connection.
 public struct HerdrClient: HerdrTransport {
@@ -137,6 +172,16 @@ public struct HerdrClient: HerdrTransport {
         let keys = Array(Array(repeating: clearKeysRound, count: rounds).joined())
         _ = try await call("pane.send_keys", params: ["pane_id": pane, "keys": keys])
     }
+
+    public func sendKeys(_ keys: [PromptKey], pane: String) async throws {
+        _ = try await call("pane.send_keys", params: ["pane_id": pane, "keys": keys.map(\.rawValue)])
+    }
+
+    public func typeText(_ text: String, pane: String) async throws {
+        _ = try await call("pane.send_text", params: ["pane_id": pane, "text": text])
+    }
+
+    public func typesLineBreaks(pane: String) -> Bool { true }
 
     public func readScreen(pane: String) async throws -> String {
         struct Read: Decodable { let text: String }

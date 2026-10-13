@@ -40,6 +40,33 @@ not just the paths.
    nothing to an empty prompt. The empty box shows a dim placeholder (`Try "…"`, or "Press up to
    edit queued messages"), so read the screen with colours (`pane.read` format `ansi`). Claude
    Code puts a no-break space after `❯`.
+6. **Put the draft back** (12 Oct 2026, scratch session in herdr, Claude Code 2.1.296):
+   - **Ctrl+S stashes** a non-empty prompt (`chat:stash`) and shows `› stashed` (grey, not dim)
+     on the line above the box. The next submit pops it back with a "Draft restored" toast: idle,
+     and when Enter queues the message while Claude works. A 19-row draft came back whole, cursor
+     where it was. tmux's `C-s` stashes too.
+   - Claude Code holds **one** stash: a second Ctrl+S replaced the first. Ctrl+S on an empty prompt
+     pops the stash. A submit with a stash and an empty prompt puts the stash in the prompt.
+   - **Typed text** (herdr `pane.send_text`, tmux `send-keys -l`; no paste markers) stays plain
+     text. Line breaks typed as LF (Ctrl+J) are new lines in the input and don't submit, in herdr and
+     tmux. Text that arrives in big chunks is folded into `[Pasted text #n]`: 2,950 characters in one
+     call became two chips, and 200-character pieces with no pause became one; 100- or
+     200-character pieces 30–50 ms apart stayed plain.
+   - The input wraps at the rule's width less 4: between words (the space is dropped, and a row can
+     end exactly at the edge) or inside a word longer than a row.
+   - A draft taller than the box (8 rows in a 27-row pane) shows only the rows around the cursor,
+     with `❯` on the top visible row and nothing marking the hidden ones. The box scrolls with the
+     cursor (Up/Down). Down on the last row does nothing outside history. Clearing all rows but
+     the top one brings the rows above into view; read that way, a 2,290-character draft of 19 rows
+     came back exactly as typed.
+
+   | Case (all `showtell-cli send --submit` unless noted) | Result |
+   |---|---|
+   | One-line draft, Claude idle | stashed, sent, "Draft restored" ✓ |
+   | 19-row draft, Claude working (message queued) | stashed, queued, whole draft back ✓ |
+   | One-line draft, Send off | stays stashed; back after Enter by hand ✓ |
+   | One-line draft, own stash held, idle | cleared, own stash stashed again, draft typed back, own stash intact ✓ |
+   | 19-row draft, cursor moved 10 rows up, own stash held, Claude working | read whole while clearing (exact match), queued, typed back, own stash intact ✓ |
 
 ## Paths compared
 
