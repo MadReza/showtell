@@ -918,3 +918,149 @@ enum PromptScreens {
         #expect(ShotNames.finderComment(of: unsent[1]!) == "Showtell, unsent (for showtell)\n\n" + text)
     }
 }
+
+@Suite struct WordDiffTests {
+    @Test func marksRemovedAndAddedWords() {
+        let parts = WordDiff.diff("so um I think the header is cut off", "I think the header is clipped.")
+        #expect(parts == [
+            .removed("so"), .removed("um"), .same("I"), .same("think"), .same("the"), .same("header"), .same("is"),
+            .removed("cut"), .removed("off"), .added("clipped."),
+        ])
+    }
+
+    @Test func ignoresCasePunctuationAndMarkers() {
+        let parts = WordDiff.diff("the header is cut off see this", "The header is cut off, see [📷 1] this.")
+        #expect(parts.allSatisfy { if case .same = $0 { return true } else { return false } })
+        #expect(parts.first == .same("The"))
+        #expect(WordDiff.sameWords("fix the bug", "Fix the bug. [📋 2]"))
+        #expect(!WordDiff.sameWords("fix the bug", "fix a bug"))
+        #expect(WordDiff.diff("", "") == [])
+        #expect(WordDiff.diff("", "hi") == [.added("hi")])
+    }
+
+    @Test func removedFractionLeavesOutFillers() {
+        #expect(WordDiff.removedFraction("um uh fix the bug now", "Fix the bug now.") == 0)
+        #expect(WordDiff.removedFraction("one two three four five six seven eight nine ten", "one two three four five six seven eight") == 0.2)
+        #expect(WordDiff.removedFraction("", "anything") == 0)
+    }
+}
+
+@Suite struct HistoryStageTests {
+    func makeStore() throws -> HistoryStore {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("showtell-stages-\(UUID().uuidString)")
+        let storage = Storage(root: root)
+        try storage.prepare()
+        return HistoryStore(storage: storage)
+    }
+
+    @Test func keepsOnlyTheStepsThatChangedWords() {
+        var e = HistoryEntry(destination: .cursor, text: "Fix the herdr bug.", submitted: false)
+        e.setStages(raw: "so fix the herder bug please", edited: "so fix the herder bug please",
+                    replaced: "so fix the herdr bug please", tidied: "Fix the herdr bug.", tidyModel: "Qwen 3 4B Instruct")
+        #expect(e.editedText == nil)
+        #expect(e.replacedText == "so fix the herdr bug please")
+        #expect(e.tidyInput == "so fix the herdr bug please")
+        #expect(e.tidyModel == "Qwen 3 4B Instruct")
+        #expect(e.tidyRemovedFraction == 2.0 / 6.0)
+        #expect(e.tidyDroppedWords)
+        #expect(e.changes?.contains(.removed("please")) == true)
+
+        var off = HistoryEntry(destination: .cursor, text: "typed", submitted: false)
+        off.setStages(raw: nil, edited: "typed", replaced: "typed", tidied: nil, tidyModel: nil)
+        #expect(off.tidyModel == HistoryEntry.tidyOff)
+        #expect(off.editedText == "typed")
+        #expect(off.tidiedText == nil)
+        #expect(off.tidyRemovedFraction == nil)
+        #expect(!off.tidyDroppedWords)
+        #expect(off.changes == nil)
+        #expect(off.hasStages)
+    }
+
+    @Test func roundTripsWithAndWithoutStages() throws {
+        let store = try makeStore()
+        var e = HistoryEntry(id: "new", date: Date(timeIntervalSince1970: 1_790_000_000), destination: .cursor, text: "Fix it.", submitted: false)
+        e.setStages(raw: "fix it", edited: "fix it", replaced: "fix it", tidied: "Fix it.", tidyModel: "Apple Intelligence")
+        try store.record(HistoryEntry(id: "plain", destination: .cursor, text: "no stages", submitted: false))
+        try store.record(e)
+        let loaded = store.load()
+        #expect(loaded[0] == e)
+        #expect(loaded[0].rawTranscript == "fix it")
+        #expect(loaded[1].hasStages == false)
+        #expect(loaded[1].changes == nil)
+        #expect(loaded[1].tidyRemovedFraction == nil)
+    }
+
+    @Test func readsEntriesSavedBeforeStagesWereKept() throws {
+        let store = try makeStore()
+        let old = #"[{"id":"old","date":"2026-10-01T10:00:00Z","destination":{"cursor":{}},"text":"hello","shots":[],"clips":[],"submitted":false}]"#
+        try Data(old.utf8).write(to: store.url)
+        let loaded = store.load()
+        #expect(loaded.map(\.id) == ["old"])
+        #expect(loaded[0].rawTranscript == nil && loaded[0].tidyModel == nil && !loaded[0].hasStages)
+    }
+}
+
+@Suite struct SpeechGateTests {
+    @Test func quickPressIsDropped() {
+        #expect(!SpeechGate.keeps("Yeah.", duration: 0.4, speech: 0.4))
+        #expect(!SpeechGate.keeps("Fix the header", duration: 0.5, speech: 0.5))
+    }
+
+    @Test func silenceIsDropped() {
+        #expect(!SpeechGate.keeps("Yeah.", duration: 3, speech: 0))
+        #expect(!SpeechGate.keeps("Okay, so the", duration: 5, speech: 0.1))
+    }
+
+    @Test func fillerNeedsClearSpeech() {
+        #expect(!SpeechGate.keeps("Yeah.", duration: 1.5, speech: 0.2))
+        #expect(!SpeechGate.keeps("um", duration: 2, speech: 0.16))
+        #expect(SpeechGate.keeps("Yeah.", duration: 1.2, speech: 0.45))
+        #expect(SpeechGate.keeps("Okay!", duration: 0.8, speech: 0.3))
+    }
+
+    @Test func shortRealMessagesStay() {
+        #expect(SpeechGate.keeps("Do it.", duration: 0.9, speech: 0.2))
+        #expect(SpeechGate.keeps("Yeah, do it.", duration: 1.0, speech: 0.2))
+        #expect(SpeechGate.keeps("Fix the header on the profile page", duration: 4, speech: 2.5))
+    }
+
+    @Test func fillerList() {
+        for word in ["yeah", "Yes.", "uh", "Um,", "mm", "Okay.", "oh", "The"] {
+            #expect(SpeechGate.isLoneFiller(word), "\(word)")
+        }
+        #expect(!SpeechGate.isLoneFiller("Yeah, okay"))
+        #expect(!SpeechGate.isLoneFiller("Stop."))
+        #expect(!SpeechGate.isLoneFiller(""))
+    }
+
+    @Test func voiceDetectorVetoesNoise() {
+        #expect(SpeechGate.speechSeconds(energy: 0.8, vad: 0) == 0)
+        #expect(SpeechGate.speechSeconds(energy: 0.3, vad: 0.512) == 0.512)
+        #expect(SpeechGate.speechSeconds(energy: 0.4, vad: 0.256) == 0.4)
+        #expect(SpeechGate.speechSeconds(energy: 0.4, vad: nil) == 0.4)
+        #expect(SpeechGate.vadSeconds(probabilities: [0.1, 0.6, 0.9, 0.49], chunkSeconds: 0.256) == 0.512)
+    }
+
+    @Test func levels() {
+        #expect(SpeechGate.level(of: [Float]()) == -120)
+        #expect(SpeechGate.level(of: [Float](repeating: 0, count: 320)) == -120)
+        #expect(abs(SpeechGate.level(of: [Float](repeating: 0.1, count: 320)) - -20) < 0.01)
+    }
+
+    @Test func energyAgainstTheNoiseFloor() {
+        // Room at -60 dBFS, two seconds; quiet speech at -45 dBFS for 0.4 s.
+        let room = [Float](repeating: -60, count: 100)
+        #expect(SpeechGate.voicedSeconds(levels: room) == 0)
+        let quiet = room + [Float](repeating: -45, count: 20)
+        #expect(abs(SpeechGate.voicedSeconds(levels: quiet) - 0.4) < 1e-9)
+        // A noisy room at -42 dBFS: the same quiet speech no longer stands out, a fan bump doesn't count.
+        let noisy = [Float](repeating: -42, count: 100) + [Float](repeating: -40, count: 20)
+        #expect(SpeechGate.voicedSeconds(levels: noisy) == 0)
+        // All speech, no quiet part: loud frames still count.
+        let allSpeech = [Float](repeating: -30, count: 40)
+        #expect(abs(SpeechGate.voicedSeconds(levels: allSpeech) - 0.8) < 1e-9)
+        // A digital-silence floor: hiss at -100 isn't speech.
+        let hiss = [Float](repeating: -120, count: 50) + [Float](repeating: -100, count: 50)
+        #expect(SpeechGate.voicedSeconds(levels: hiss) == 0)
+    }
+}

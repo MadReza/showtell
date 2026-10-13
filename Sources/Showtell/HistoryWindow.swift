@@ -87,6 +87,8 @@ final class HistoryModel: ObservableObject {
     @Published var confirmClearHistory = false
     @Published var confirmClearShots = false
     @Published var sending = false
+    /// What changed: the recogniser's transcript shown in full (kept here: @State needs Xcode's SwiftUI macros).
+    @Published var showRawTranscript = false
 
     let store: HistoryStore
     private weak var owner: HistoryWindow?
@@ -415,10 +417,15 @@ struct HistoryRow: View {
             }
             Text(entry.preview.isEmpty ? "(pictures only)" : entry.preview)
                 .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
-            if !entry.shots.isEmpty || !entry.clips.isEmpty || entry.failure != nil {
+            if !entry.shots.isEmpty || !entry.clips.isEmpty || entry.failure != nil || entry.tidyDroppedWords {
                 HStack(spacing: 8) {
                     if !entry.shots.isEmpty { Label("\(entry.shots.count)", systemImage: "photo") }
                     if !entry.clips.isEmpty { Label("\(entry.clips.count)", systemImage: "doc.on.clipboard") }
+                    if let dropped = entry.tidyRemovedFraction, entry.tidyDroppedWords {
+                        Label("Tidy-up dropped \(Int((dropped * 100).rounded()))%", systemImage: "text.badge.minus")
+                            .foregroundStyle(.red)
+                            .help("The tidy-up removed more than a tenth of the words it was given")
+                    }
                     if entry.failure != nil {
                         Label("Not sent", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     }
@@ -483,6 +490,9 @@ struct EntryDetail<Destinations: View>: View {
                     .padding(14)
                     .background(.background.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+            }
+            if entry.hasStages {
+                section("What changed") { ChangesView(entry: entry, model: model) }
             }
             if !entry.shots.isEmpty {
                 section("Screenshots") {
@@ -568,6 +578,87 @@ struct EntryDetail<Destinations: View>: View {
         }
         out += AttributedString(ns.substring(from: cursor))
         return out
+    }
+}
+
+/// From what the recogniser heard to what was sent: words removed in red, added in green,
+/// the tidy-up model, and the transcript in full on request.
+struct ChangesView: View {
+    let entry: HistoryEntry
+    @ObservedObject var model: HistoryModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "wand.and.stars").foregroundStyle(.secondary)
+                Text("Tidy-up: \(entry.tidyModel ?? HistoryEntry.tidyOff)")
+                if let dropped = entry.tidyRemovedFraction {
+                    Text("· removed \(Int((dropped * 100).rounded()))% of the words it was given")
+                        .foregroundStyle(entry.tidyDroppedWords ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                }
+            }
+            .font(.callout)
+            Text(steps).font(.caption).foregroundStyle(.secondary)
+            if let parts = entry.changes {
+                Text(Self.styled(parts))
+                    .font(.system(size: 13))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+                if let raw = entry.rawTranscript {
+                    HStack {
+                        Toggle("Show the raw transcript", isOn: $model.showRawTranscript).toggleStyle(.checkbox)
+                        Spacer()
+                        if model.showRawTranscript {
+                            Button { model.copy(raw, what: "Transcript") } label: { Label("Copy", systemImage: "doc.on.doc") }
+                                .controlSize(.small)
+                        }
+                    }
+                    if model.showRawTranscript {
+                        Text(raw.isEmpty ? "(nothing heard)" : raw)
+                            .font(.system(size: 13)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else {
+                Text("Typed, not spoken: no transcript to compare.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Word counts at each step that changed the words.
+    private var steps: String {
+        func count(_ text: String) -> Int { WordDiff.words(text).count }
+        var parts: [String] = []
+        if let raw = entry.rawTranscript { parts.append("heard \(count(raw))") }
+        if let edited = entry.editedText { parts.append("after your edits \(count(edited))") }
+        if let replaced = entry.replacedText { parts.append("after replacements \(count(replaced))") }
+        if let tidied = entry.tidiedText { parts.append("after tidy-up \(count(tidied))") }
+        parts.append("sent \(count(entry.text))")
+        return "Words: " + parts.joined(separator: " → ")
+    }
+
+    static func styled(_ parts: [WordDiff.Part]) -> AttributedString {
+        var out = AttributedString()
+        for (i, part) in parts.enumerated() {
+            if i > 0 { out += AttributedString(" ") }
+            switch part {
+            case .same(let word):
+                out += AttributedString(word)
+            case .removed(let word):
+                var w = AttributedString(word)
+                w.foregroundColor = .red
+                w.strikethroughStyle = .single
+                out += w
+            case .added(let word):
+                var w = AttributedString(word)
+                w.foregroundColor = .green
+                out += w
+            }
+        }
+        return out.characters.isEmpty ? AttributedString("(no words)") : out
     }
 }
 

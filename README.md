@@ -82,6 +82,16 @@ it, with its `[📷 n]` and `[📋 n]` markers, the screenshots (click one to en
 in Finder) and each piece of copied text. Search finds words in messages, copied text and session
 names.
 
+**What changed** shows how a spoken message got from your voice to what was sent, to find where
+words went missing: the recogniser's transcript when listening stopped compared word by word with
+the sent text (removed words struck through in red, added words in green; case, punctuation and
+markers are ignored), the tidy-up model that ran (or Off), how many words each step left (heard →
+after your edits → after replacements → after tidy-up → sent), and the transcript in full on
+request. If the recogniser's transcript already lacks your words, the speech recognition lost them;
+if the tidy-up step drops them, the tidy-up did. A list row says **Tidy-up dropped n%** when the
+tidy-up removed more than a tenth of the words it was given (um, uh and the like don't count).
+Messages sent before this was kept show only their text.
+
 - **Copy** puts the text, with its markers, on the clipboard; each piece of copied text has its own
   Copy. A recording that is listening doesn't pick these up.
 - **Send again** sends the message, pictures included, to any open session or the cursor, the same
