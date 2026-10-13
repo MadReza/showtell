@@ -67,6 +67,38 @@ not just the paths.
    | One-line draft, Send off | stays stashed; back after Enter by hand ✓ |
    | One-line draft, own stash held, idle | cleared, own stash stashed again, draft typed back, own stash intact ✓ |
    | 19-row draft, cursor moved 10 rows up, own stash held, Claude working | read whole while clearing (exact match), queued, typed back, own stash intact ✓ |
+7. **A message for a session showing a dialog** (12 Oct 2026, scratch session in herdr, Claude
+   Code 2.1.296, `--permission-mode default`). Earlier, Showtell waited silently for up to 10
+   minutes, then pasted, so an answer meant for a question arrived afterwards as a new message.
+   Now the message is held, the bar says so, and you choose.
+   - **Question (AskUserQuestion):** under a rule, a header ` ☐ Fruit` or, for several questions
+     or a multi-select, a tab row `←  ☐ Colours  ☐ Size  ✔ Submit  →`; then the question and
+     numbered options, the last being `Type something.` (`[ ] Type something` in a multi-select).
+     Then a rule, `Chat about this`, and the footer `Enter to select · ↑/↓ to navigate · Esc to cancel`.
+     `❯` marks the focused option. On the free-text option the placeholder turns dim (read with
+     colours, keeping dim text), and typing replaces it; a long answer wraps onto indented lines.
+   - **One choice:** a number key on an option picks it and moves on, but on the free-text option
+     it only moves there. Enter on the free-text option, with text in it, sends it.
+   - **Multi-select:** number keys and Enter tick boxes and leave the focus where it was. Typing
+     in the free-text option ticks it. Enter on it *unticks* it. The row under it (`Next`, or
+     `Submit` for the last question) moves on.
+   - **Several questions:** each answer moves to the next tab, and the last to `Review your answers`,
+     with `1. Submit answers` / `2. Cancel` and nothing to type. A single multi-select question
+     also ends there.
+   - **Permission prompt:** `Do you want to proceed?` with options, footer `Esc to cancel · Tab to amend`.
+
+   | Case (`showtell-cli send --submit --if-held …`) | Result |
+   |---|---|
+   | One-choice question, `answer`, text with a digit plus a picture | arrows to `Type something.`, typed, Enter; Claude got "Hot chocolate with 2 marshmallows, please and a biscuit"; picture left out ✓ |
+   | Two questions, the first a multi-select, `answer` | typed in its `[ ] Type something`, Down to `Next`, Enter; dialog moved to question 2, left open ✓ |
+   | Second question (one choice) of two, `answer` | typed, Enter; dialog moved to `Review your answers`, left for the user ✓ |
+   | Review page, `cancel` | held as "asking a question", nothing to type; cancelled, nothing pressed ✓ |
+   | Review page, `after`, then `1` pressed by hand | pasted and sent once the dialog closed ✓ |
+   | Permission prompt (`touch`), `answer` | held as "waiting on a permission prompt", no Answer offered; screen unchanged; pasted after Esc by hand ✓ |
+
+   The screens are kept as test fixtures in `Tests/ShowtellCoreTests/Screens/`. The bar's buttons
+   call the same `Outbox.decide` as `--if-held`; the bar itself wasn't driven in this test,
+   because that would have meant quitting the installed app.
 
 ## Paths compared
 

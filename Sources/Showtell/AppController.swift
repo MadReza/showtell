@@ -44,9 +44,14 @@ final class AppController: NSObject, NSMenuDelegate {
     private var filesSending: [String] = []
     private var trustTimer: Timer?
     private let panel = OverlayPanel()
+    /// Shows a held message while the bar is busy with a recording.
+    private lazy var notice = NoticePanel(held: model.held)
     private var statusItem: NSStatusItem!
 
-    private var state = State.idle
+    private var state = State.idle {
+        // After the change is done with the bar: a held message moves between the bar and its own panel.
+        didSet { if state != oldValue { DispatchQueue.main.async { [weak self] in self?.placeHeld() } } }
+    }
     private var composer = Composer()
     private var recordingID = ""
     private var recordingStart = Date()
@@ -96,6 +101,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.onToggleScreenshots = { [weak self] in self?.toggleScreenshotsInBar() }
         model.onToggleText = { [weak self] in self?.toggleCopiedTextInBar() }
         model.onShowHistory = { [weak self] in self?.openHistory() }
+        model.held.onChoice = { [weak self] choice in self?.chooseHeld(choice) }
         clipboard.onImage = { [weak self] png in self?.screenshotArrived(png) }
         clipboard.onText = { [weak self] text in self?.textCopied(text) }
         screenshotKeys.onScreenshotKeys = { [weak self] in self?.screenshotKeysPressed() }
@@ -773,17 +779,26 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         let files = shotURLs.values.map(\.lastPathComponent)
         filesSending += files
-        let result = await outbox.enqueue(pieces, to: target, submit: submit, onDraft: keepClearedDraft(id))
+        let result = await outbox.enqueue(pieces, to: target, submit: submit, id: id, onDraft: keepClearedDraft(id))
         doneSending(files)
         pendingSends -= 1
         switch result {
-        case .success(let found):
+        case .success(let delivered):
+            let found = delivered.target
             if !routed, found != settings.pinned, settings.pinned?.sessionID == found.sessionID {
                 settings.pinned = found
                 storage.save(settings)
             }
             log.info("sent")
-            if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
+            if let answer = delivered.answered {
+                answered(id, answer, found.name)
+            } else if state == .idle, pendingSends == 0 {
+                flash(.sent, for: 1.2)
+            }
+        case .failure(DeliveryError.cancelled):
+            log.info("cancelled while held")
+            renameAsUnsent()
+            cancelled(id)
         case .failure(let error):
             log.error("not sent: \(String(describing: error), privacy: .public)")
             markFailed(id, "\(error)")
@@ -859,6 +874,8 @@ final class AppController: NSObject, NSMenuDelegate {
         copy.clearedDraft = nil
         copy.draftOutcome = nil
         copy.draftNotRestored = nil
+        copy.cancelled = nil
+        copy.answered = nil
         copy.submitted = destination != .cursor && submit
         record(copy)
         switch destination {
@@ -879,13 +896,20 @@ final class AppController: NSObject, NSMenuDelegate {
             }
             let files = entry.shots.map(\.file)
             filesSending += files
-            let result = await outbox.enqueue(pieces, to: target, submit: submit, onDraft: keepClearedDraft(id))
+            let result = await outbox.enqueue(pieces, to: target, submit: submit, id: id, onDraft: keepClearedDraft(id))
             doneSending(files)
             pendingSends -= 1
             switch result {
-            case .success:
-                if state == .idle, pendingSends == 0 { flash(.sent, for: 1.2) }
+            case .success(let delivered):
+                if let answer = delivered.answered {
+                    answered(id, answer, delivered.target.name)
+                } else if state == .idle, pendingSends == 0 {
+                    flash(.sent, for: 1.2)
+                }
                 return nil
+            case .failure(DeliveryError.cancelled):
+                cancelled(id)
+                return "Cancelled: not sent"
             case .failure(let error):
                 markFailed(id, "\(error)")
                 return "Not sent: \(error)"
@@ -900,10 +924,70 @@ final class AppController: NSObject, NSMenuDelegate {
     @objc private func openHistory() { historyWindow.show() }
 
     private func deliveryEvent(_ event: DeliveryEvent) {
-        guard state == .idle else { return }
-        if case .waitingForApproval(let name) = event {
-            model.phase = .waiting("\(name) shows a dialog: waiting before pasting")
+        switch event {
+        case .held(let hold):
+            log.info("held: \(hold.kind.rawValue, privacy: .public), can answer: \(hold.canAnswer)")
+            model.held.hold = hold
+            placeHeld()
+        case .released(let id):
+            guard model.held.hold?.messageID == id else { return }
+            model.held.hold = nil
+            placeHeld()
+            if state == .idle, panel.isVisible { model.phase = .sending }
+        case .waitingForApproval(let name):
+            guard state == .idle else { return }
+            model.phase = .waiting("\(name) shows a dialog: waiting before pressing Enter")
+        default:
+            break
         }
+    }
+
+    /// A held message shows in the bar when it is free, else in a small panel under it.
+    private func placeHeld() {
+        guard let hold = model.held.hold else {
+            model.showsHeld = false
+            notice.orderOut(nil)
+            return
+        }
+        if state == .idle {
+            notice.orderOut(nil)
+            hideWork?.cancel()
+            model.phase = .waiting(hold.title)
+            model.hint = ""
+            model.targetName = targetLabel
+            model.showsSubmit = false
+            model.showsCapture = false
+            model.targetShortcuts = ""
+            model.routeNote = ""
+            model.showsHeld = true
+            if !panel.isVisible { panel.present() }
+        } else {
+            model.showsHeld = false
+            notice.show(below: panel.frame)
+        }
+    }
+
+    private func chooseHeld(_ choice: HoldChoice) {
+        guard let id = model.held.hold?.messageID else { return }
+        log.info("held message: \(String(describing: choice), privacy: .public)")
+        Task { await outbox.decide(id, choice) }
+    }
+
+    /// Notes in History how a message went as an answer, and says so in the bar.
+    private func answered(_ id: String, _ answer: AnsweredQuestion, _ name: String) {
+        try? history.setAnswered(id, answer)
+        historyWindow.reload()
+        var note = "Answered \(name)'s question"
+        if answer.picturesLeftOut { note += " · pictures kept in History" }
+        if answer.moreLeft { note += " · the rest of the dialog is yours" }
+        flash(.info(note), for: answer.moreLeft || answer.picturesLeftOut ? 6 : 2.5)
+    }
+
+    /// Notes in History that a held message was cancelled.
+    private func cancelled(_ id: String) {
+        try? history.markCancelled(id)
+        historyWindow.reload()
+        flash(.info("Cancelled: the message wasn't sent (History keeps it)"), for: 3)
     }
 
     private func cancelRecording() {
@@ -986,7 +1070,8 @@ final class AppController: NSObject, NSMenuDelegate {
         panel.present()
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.state == .idle, self.pendingSends == 0 || phase != .sent else { return }
+            guard let self, self.state == .idle, self.pendingSends == 0 || phase != .sent,
+                  self.model.held.hold == nil else { return }
             self.panel.dismiss()
         }
         hideWork = work
