@@ -17,12 +17,17 @@ public struct HerdrAgent: Decodable, Equatable, Sendable {
     public let foregroundCwd: String?
     public let title: String?
     public let focused: Bool?
+    public let tabID: String?
+    /// The name herdr's sidebar shows for this pane's workspace (and tab, when it has several).
+    /// Not in `agent.list`: `HerdrClient` fills it in from `workspace.list` and `tab.list`.
+    public var herdrName: String?
 
     public var sessionID: String? { session?.value }
     public var isClaude: Bool { agent == "claude" }
 
-    /// Short label for menus: the terminal title, else the folder name.
+    /// Short label for menus: herdr's name for the workspace, else the terminal title, else the folder name.
     public var displayName: String {
+        if let herdrName, !herdrName.isEmpty { return herdrName }
         if let title, !title.isEmpty { return title }
         let dir = foregroundCwd ?? cwd ?? paneID
         return URL(fileURLWithPath: dir).lastPathComponent
@@ -35,7 +40,7 @@ public struct HerdrAgent: Decodable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case paneID = "pane_id", terminalID = "terminal_id", workspaceID = "workspace_id"
         case agent, status = "agent_status", session = "agent_session", cwd
-        case foregroundCwd = "foreground_cwd", title = "terminal_title_stripped", focused
+        case foregroundCwd = "foreground_cwd", title = "terminal_title_stripped", focused, tabID = "tab_id"
     }
 
     public init(
@@ -52,6 +57,74 @@ public struct HerdrAgent: Decodable, Equatable, Sendable {
         self.foregroundCwd = cwd
         self.title = title
         self.focused = false
+        self.tabID = nil
+    }
+}
+
+/// herdr's names for workspaces and tabs, as its sidebar shows them.
+public struct HerdrNames: Decodable, Sendable {
+    public struct Workspace: Decodable, Sendable {
+        public let id: String
+        public let label: String?
+        public let tabCount: Int?
+        enum CodingKeys: String, CodingKey { case id = "workspace_id", label, tabCount = "tab_count" }
+    }
+
+    public struct Tab: Decodable, Sendable {
+        public let id: String
+        public let number: Int?
+        public let label: String?
+        enum CodingKeys: String, CodingKey { case id = "tab_id", number, label }
+    }
+
+    public var workspaces: [Workspace]
+    public var tabs: [Tab]
+
+    public init(workspaces: [Workspace] = [], tabs: [Tab] = []) {
+        self.workspaces = workspaces
+        self.tabs = tabs
+    }
+
+    enum CodingKeys: String, CodingKey { case workspaces, tabs }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        workspaces = try c.decodeIfPresent([Workspace].self, forKey: .workspaces) ?? []
+        tabs = try c.decodeIfPresent([Tab].self, forKey: .tabs) ?? []
+    }
+
+    /// The workspace label, then the tab label when the workspace has more than one tab and the tab
+    /// was named (an unnamed tab's label is just its number). Nil when herdr names neither.
+    public func name(workspace: String?, tab: String?) -> String? {
+        let ws = workspaces.first { $0.id == workspace }
+        let wsName = ws?.label.map(Self.clean).flatMap { $0.isEmpty ? nil : $0 }
+        let t = tabs.first { $0.id == tab }
+        var tabName = t?.label.map(Self.clean).flatMap { $0.isEmpty ? nil : $0 }
+        if tabName == t?.number.map(String.init) { tabName = nil }
+        if wsName != nil, (ws?.tabCount ?? 1) <= 1 { tabName = nil }
+        switch (wsName, tabName) {
+        case let (w?, t?): return "\(w) · \(t)"
+        case let (w?, nil): return w
+        case let (nil, t?): return t
+        default: return nil
+        }
+    }
+
+    /// Drops the tree glyphs that indent nested workspaces in the sidebar (`└ name`) and a trailing
+    /// ` · p:<id>` pointer some tools append, which the sidebar truncates away.
+    static func clean(_ label: String) -> String {
+        var s = Substring(label)
+        if let r = s.range(of: " · p:", options: .backwards) { s = s[..<r.lowerBound] }
+        s = s.drop { $0.isWhitespace || "└├│─".contains($0) }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    public func named(_ agents: [HerdrAgent]) -> [HerdrAgent] {
+        agents.map { agent in
+            var a = agent
+            a.herdrName = name(workspace: agent.workspaceID, tab: agent.tabID)
+            return a
+        }
     }
 }
 
@@ -146,7 +219,10 @@ public struct HerdrClient: HerdrTransport {
     public func listAgents() async throws -> [HerdrAgent] {
         struct Result: Decodable { let agents: [HerdrAgent] }
         let data = try await call("agent.list", params: [:])
-        return try JSONDecoder().decode(Result.self, from: data).agents
+        let agents = try JSONDecoder().decode(Result.self, from: data).agents
+        let names = Self.names(
+            workspaces: try? await call("workspace.list", params: [:]), tabs: try? await call("tab.list", params: [:]))
+        return names.named(agents)
     }
 
     /// Synchronous variant for menus, which must be built on the spot. herdr answers in milliseconds.
@@ -158,7 +234,25 @@ public struct HerdrClient: HerdrTransport {
         struct Envelope: Decodable { let result: Result?; let error: [String: String]? }
         let env = try JSONDecoder().decode(Envelope.self, from: reply)
         if let e = env.error { throw HerdrError(code: e["code"] ?? "error", message: e["message"] ?? "") }
-        return env.result?.agents ?? []
+        let names = Self.names(workspaces: try? callNow("workspace.list"), tabs: try? callNow("tab.list"))
+        return names.named(env.result?.agents ?? [])
+    }
+
+    /// The raw JSON of a parameterless request's `result`, synchronously.
+    private func callNow(_ method: String) throws -> Data {
+        let request: [String: Any] = ["id": "showtell-menu", "method": method, "params": [String: Any]()]
+        let line = try JSONSerialization.data(withJSONObject: request) + Data([0x0a])
+        let reply = try UnixSocket.exchange(path: socketPath, payload: line, timeout: 1)
+        guard let obj = try JSONSerialization.jsonObject(with: reply) as? [String: Any], let result = obj["result"] else {
+            throw HerdrError(code: "bad_reply", message: String(decoding: reply, as: UTF8.self))
+        }
+        return try JSONSerialization.data(withJSONObject: result)
+    }
+
+    /// Workspace and tab names from `workspace.list` and `tab.list` results. Missing or odd ones stay empty.
+    static func names(workspaces: Data?, tabs: Data?) -> HerdrNames {
+        let decode = { (d: Data?) in d.flatMap { try? JSONDecoder().decode(HerdrNames.self, from: $0) } }
+        return HerdrNames(workspaces: decode(workspaces)?.workspaces ?? [], tabs: decode(tabs)?.tabs ?? [])
     }
 
     public func paste(_ text: String, pane: String) async throws {

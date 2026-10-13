@@ -175,6 +175,41 @@ import Testing
     }
 }
 
+@Suite struct HerdrNameTests {
+    let names = try! JSONDecoder().decode(HerdrNames.self, from: Data(#"""
+    {"workspaces": [
+      {"workspace_id": "w1", "label": "firstmate", "tab_count": 1},
+      {"workspace_id": "w2", "label": "└ crm8965-prod-mobile-uat · p:nqZpWUZx6-e1sheDjYCrbQ", "tab_count": 1},
+      {"workspace_id": "w3", "label": "guild", "tab_count": 2},
+      {"workspace_id": "w4", "label": "", "tab_count": 1}],
+     "tabs": [
+      {"tab_id": "w1:t1", "number": 1, "label": "1"},
+      {"tab_id": "w2:t2", "number": 2, "label": "fm-crm8965-prod-mobile-uat"},
+      {"tab_id": "w3:t1", "number": 1, "label": "1"},
+      {"tab_id": "w3:t2", "number": 2, "label": "showtell"},
+      {"tab_id": "w4:t1", "number": 1, "label": "1"}]}
+    """#.utf8))
+
+    func agent(_ ws: String, _ tab: String, title: String? = "Some task") throws -> HerdrAgent {
+        let titleJSON = title.map { "\"\($0)\"" } ?? "null"
+        let json = #"{"pane_id": "\#(ws):p1", "terminal_id": "t", "workspace_id": "\#(ws)", "tab_id": "\#(tab)", "#
+            + #""agent_status": "idle", "cwd": "/src/firstmate", "terminal_title_stripped": \#(titleJSON)}"#
+        return names.named([try JSONDecoder().decode(HerdrAgent.self, from: Data(json.utf8))])[0]
+    }
+
+    @Test func menusShowTheSidebarNames() throws {
+        #expect(try agent("w1", "w1:t1").displayName == "firstmate")
+        #expect(try agent("w2", "w2:t2").displayName == "crm8965-prod-mobile-uat")
+        #expect(try agent("w3", "w3:t1").displayName == "guild")  // an unnamed tab adds nothing
+        #expect(try agent("w3", "w3:t2").displayName == "guild · showtell")
+    }
+
+    @Test func fallsBackToTitleThenFolder() throws {
+        #expect(try agent("w4", "w4:t1").displayName == "Some task")
+        #expect(try agent("w9", "w9:t1", title: nil).displayName == "firstmate")
+    }
+}
+
 @Suite struct SettingsTests {
     @Test func shortcutLabels() {
         #expect(Shortcut.tap("leftOption").label == "Left ⌥ tap")
