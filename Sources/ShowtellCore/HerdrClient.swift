@@ -104,6 +104,8 @@ public enum PromptKey: String, Sendable {
     case stash = "ctrl+s"
     /// Down a row in the input. On the last row it does nothing, unless you are going through history.
     case down
+    /// Up a row; in a dialog, the option above.
+    case up
     /// To the end of the row.
     case end = "ctrl+e"
 
@@ -111,6 +113,7 @@ public enum PromptKey: String, Sendable {
         switch self {
         case .stash: return "C-s"
         case .down: return "Down"
+        case .up: return "Up"
         case .end: return "C-e"
         }
     }
@@ -120,6 +123,7 @@ public enum PromptKey: String, Sendable {
         switch self {
         case .stash: return "(character id 19)"
         case .down: return "(character id 27) & \"[B\""
+        case .up: return "(character id 27) & \"[A\""
         case .end: return "(character id 5)"
         }
     }

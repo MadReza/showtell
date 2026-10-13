@@ -62,6 +62,10 @@ public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
     public var draftOutcome: DraftOutcome?
     /// Why the cleared text was not put back, if it wasn't.
     public var draftNotRestored: String?
+    /// The session showed a dialog and you cancelled the message: it wasn't sent.
+    public var cancelled: Bool?
+    /// Its words went as the answer to the session's question, not into the prompt.
+    public var answered: AnsweredQuestion?
 
     /// How the text got from your voice to what was sent, to see where words went missing.
     /// Older entries have none of it.
@@ -196,6 +200,22 @@ public struct HistoryStore: Sendable {
         var entries = load()
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i].failure = reason
+        try save(entries)
+    }
+
+    /// Notes that a message held for a dialog was cancelled.
+    public func markCancelled(_ id: String) throws {
+        var entries = load()
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[i].cancelled = true
+        try save(entries)
+    }
+
+    /// Notes that a message went as the answer to the session's question.
+    public func setAnswered(_ id: String, _ answered: AnsweredQuestion) throws {
+        var entries = load()
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[i].answered = answered
         try save(entries)
     }
 

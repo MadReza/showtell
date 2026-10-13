@@ -250,8 +250,13 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
     func pressEnter(pane: String) async throws { record("enter \(pane)") }
     /// Screens returned by successive reads; the last one repeats.
     var screens: [String] = [""]
+    /// When set, the screen follows from the calls so far instead (for screens read an unknown number of times).
+    var screenFor: (([String]) -> String)?
     func readScreen(pane: String) async throws -> String {
-        lock.withLock { screens.count > 1 ? screens.removeFirst() : screens[0] }
+        lock.withLock {
+            if let screenFor { return screenFor(calls) }
+            return screens.count > 1 ? screens.removeFirst() : screens[0]
+        }
     }
     func sendClearKeys(pane: String, rounds: Int) async throws { record("clear \(pane) \(rounds)") }
     func sendKeys(_ keys: [PromptKey], pane: String) async throws {
@@ -272,7 +277,7 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
         let result = await outbox.enqueue(
             [.text("look "), .image(URL(fileURLWithPath: "/s/1.png")), .text(" here")], to: target, submit: true)
         #expect(fake.calls == ["paste w1:p2 look ", "paste w1:p2 /s/1.png", "paste w1:p2  here", "enter w1:p2"])
-        #expect((try? result.get())?.paneID == "w1:p2")
+        #expect((try? result.get())?.target.paneID == "w1:p2")
     }
 
     @Test func waitsWhileBlocked() async {
@@ -280,9 +285,115 @@ final class FakeHerdr: HerdrTransport, @unchecked Sendable {
         let events = EventLog()
         let outbox = Outbox(transport: fake, sleep: { _ in })
         await outbox.setEventHandler { events.add($0) }
-        await outbox.enqueue([.text("hi")], to: target, submit: false)
+        await outbox.enqueue([.text("hi")], to: target, submit: false, id: "m1")
         #expect(fake.calls == ["paste w1:p2 hi"])
-        #expect(events.all.first == .waitingForApproval("showtell"))
+        #expect(events.all.prefix(2) == [
+            .held(Hold(messageID: "m1", name: "showtell", kind: .other, canAnswer: false, hasPictures: false, sendAfter: false)),
+            .released("m1"),
+        ])
+    }
+
+    /// An outbox that makes `choice` for each message as soon as it is held.
+    func choosing(_ choice: HoldChoice, _ fake: FakeHerdr, timing: Outbox.Timing = Outbox.Timing(),
+                  events: EventLog = EventLog()) async -> Outbox {
+        // A real millisecond per poll, so the choice is made before the timeout.
+        let outbox = Outbox(transport: fake, timing: timing, sleep: { _ in try? await Task.sleep(nanoseconds: 1_000_000) })
+        await outbox.setEventHandler { event in
+            events.add(event)
+            if case .held(let hold) = event, !hold.sendAfter { Task { await outbox.decide(hold.messageID, choice) } }
+        }
+        return outbox
+    }
+
+    @Test func heldMessageCanBeCancelled() async {
+        let fake = FakeHerdr(statuses: [.blocked])
+        fake.screens = [DialogScreens.load("q-single")]
+        let events = EventLog()
+        let result = await choosing(.cancel, fake, events: events)
+            .enqueue([.text("hello")], to: target, submit: true, id: "m1")
+        if case .failure(let e) = result { #expect(e as? DeliveryError == .cancelled("showtell")) } else {
+            Issue.record("expected failure")
+        }
+        #expect(fake.calls.isEmpty)
+        #expect(events.all.first == .held(Hold(messageID: "m1", name: "showtell", kind: .question, canAnswer: true,
+                                                hasPictures: false, sendAfter: false)))
+        #expect(events.all.contains(.released("m1")))
+    }
+
+    @Test func answersAQuestionInItsFreeTextOption() async {
+        let fake = FakeHerdr(statuses: [.blocked])
+        fake.screenFor = { calls in
+            if calls.contains(where: { $0.hasPrefix("enter") }) { return PromptScreens.empty }
+            if calls.contains(where: { $0.hasPrefix("type") }) { return DialogScreens.load("q-typed") }
+            if calls.contains("keys w1:p2 down down") { return DialogScreens.load("q-typing") }
+            return DialogScreens.load("q-single")
+        }
+        let shot = URL(fileURLWithPath: "/s/1.png")
+        let result = await choosing(.answer, fake)
+            .enqueue([.text("Mango,"), .image(shot), .text("\nripe")], to: target, submit: true)
+        // Arrows to the free-text option (a number key on another would pick it), the words, Enter.
+        #expect(fake.calls == ["keys w1:p2 down down", "type w1:p2 Mango, ripe", "enter w1:p2"])
+        #expect((try? result.get())?.answered
+            == AnsweredQuestion(question: "Which fruit do you like?", picturesLeftOut: true, moreLeft: false))
+    }
+
+    @Test func multiSelectAnswerMovesOnWithNextAndLeavesTheRest() async {
+        let fake = FakeHerdr(statuses: [.blocked])
+        let typed = DialogScreens.load("q-multi-typed")
+        // Down from the answer: the focus on the Next row.
+        let onNext = typed.replacingOccurrences(of: "\u{1b}[38;2;177;185;249m❯ \u{1b}[0m\u{1b}[38;2;153;153;153m4.",
+                                                with: "  \u{1b}[0m\u{1b}[38;2;153;153;153m4.")
+            .replacingOccurrences(of: "     \u{1b}[0m\u{1b}[1mNext", with: "❯    \u{1b}[0m\u{1b}[1mNext")
+        fake.screenFor = { calls in
+            if calls.contains(where: { $0.hasPrefix("enter") }) { return DialogScreens.load("q-tabs-second") }
+            if calls.last == "keys w1:p2 down" { return onNext }
+            if calls.contains(where: { $0.hasPrefix("type") }) { return typed }
+            if calls.contains("keys w1:p2 down down down") { return typed }
+            return DialogScreens.load("q-multi")
+        }
+        let result = await choosing(.answer, fake).enqueue([.text("Purple")], to: target, submit: true)
+        #expect(fake.calls == ["keys w1:p2 down down down", "type w1:p2 Purple", "keys w1:p2 down", "enter w1:p2"])
+        #expect((try? result.get())?.answered
+            == AnsweredQuestion(question: "Which colours?", picturesLeftOut: false, moreLeft: true))
+    }
+
+    @Test func nothingIsPressedInAPermissionPrompt() async {
+        let fake = FakeHerdr(statuses: Array(repeating: .blocked, count: 6) + [.idle])
+        fake.screenFor = { calls in calls.isEmpty ? DialogScreens.load("perm") : PromptScreens.empty }
+        let events = EventLog()
+        let result = await choosing(.answer, fake, events: events).enqueue([.text("hello")], to: target, submit: false)
+        // The choice is ignored; the message goes into the prompt once the prompt is gone.
+        #expect(fake.calls == ["paste w1:p2 hello"])
+        #expect((try? result.get())?.answered == nil)
+        guard case .held(let hold)? = events.all.first else { Issue.record("not held"); return }
+        #expect(hold.kind == .permission && !hold.canAnswer)
+    }
+
+    @Test func picturesAloneCantAnswer() async {
+        let fake = FakeHerdr(statuses: Array(repeating: .blocked, count: 4) + [.idle])
+        fake.screens = [DialogScreens.load("q-single")]
+        let events = EventLog()
+        await choosing(.answer, fake, events: events)
+            .enqueue([.image(URL(fileURLWithPath: "/s/1.png"))], to: target, submit: false)
+        #expect(fake.calls == ["paste w1:p2 /s/1.png"])
+        guard case .held(let hold)? = events.all.first else { Issue.record("not held"); return }
+        #expect(hold.kind == .question && !hold.canAnswer && hold.hasPictures)
+    }
+
+    @Test func sendAfterWaitsPastTheTimeout() async {
+        var timing = Outbox.Timing()
+        timing.blockedTimeout = 1
+        let fake = FakeHerdr(statuses: Array(repeating: .blocked, count: 10) + [.idle])
+        let result = await choosing(.sendAfter, fake, timing: timing).enqueue([.text("later")], to: target, submit: false)
+        #expect(fake.calls == ["paste w1:p2 later"])
+        #expect((try? result.get()) != nil)
+
+        let undecided = FakeHerdr(statuses: Array(repeating: .blocked, count: 10) + [.idle])
+        let gaveUp = await Outbox(transport: undecided, timing: timing, sleep: { _ in })
+            .enqueue([.text("later")], to: target, submit: false)
+        if case .failure(let e) = gaveUp { #expect(e as? DeliveryError == .stillBlocked("showtell")) } else {
+            Issue.record("expected failure")
+        }
     }
 
     @Test func messagesStayInOrder() async {
@@ -1062,5 +1173,94 @@ enum PromptScreens {
         // A digital-silence floor: hiss at -100 isn't speech.
         let hiss = [Float](repeating: -120, count: 50) + [Float](repeating: -100, count: 50)
         #expect(SpeechGate.voicedSeconds(levels: hiss) == 0)
+    }
+}
+
+/// Claude Code 2.1.296 dialogs captured from a scratch session in herdr (`pane.read`, format ansi), in Screens/.
+enum DialogScreens {
+    static func load(_ name: String) -> String {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "ansi", subdirectory: "Screens"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return text
+    }
+}
+
+@Suite struct DialogTests {
+    @Test func questionWithAFreeTextOption() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("q-single")))
+        #expect(d.kind == .question)
+        #expect(d.question == "Which fruit do you like?")
+        #expect(d.options.map(\.label) == ["Apple", "Banana", "Type something.", "Chat about this"])
+        #expect(d.focused?.number == 1)
+        #expect(d.freeText?.number == 3)
+        #expect(d.canAnswer && !d.multiSelect && d.tabs.isEmpty)
+    }
+
+    @Test func focusedFreeTextKeepsItsDimPlaceholder() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("q-typing")))
+        #expect(d.focused?.number == 3 && d.freeText?.number == 3)
+    }
+
+    @Test func typedAnswerReplacesThePlaceholder() throws {
+        let screen = DialogScreens.load("q-typed")
+        let d = try #require(Dialog.read(screen))
+        #expect(d.focused?.label == "Mango, ripe")
+        #expect(d.freeText == nil)
+        #expect(Dialog.shows("Mango, ripe", on: screen))
+        #expect(!Dialog.shows("Mango, unripe", on: screen))
+    }
+
+    @Test func multiSelectWithSeveralQuestions() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("q-multi")))
+        #expect(d.kind == .question && d.multiSelect)
+        #expect(d.question == "Which colours?")
+        #expect(d.tabs == ["Colours", "Size"])
+        #expect(d.freeText?.number == 4 && d.freeText?.checkbox == true)
+        #expect(d.focused?.number == 1)
+    }
+
+    @Test func secondQuestionOfSeveral() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("q-tabs-second")))
+        #expect(d.question == "Which size?" && d.tabs == ["Colours", "Size"] && !d.multiSelect)
+        #expect(d.freeText?.number == 3)
+    }
+
+    @Test func oneMultiSelectQuestionHasTabsToo() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("q-multiselect-one")))
+        #expect(d.tabs == ["Pets"] && d.multiSelect && d.freeText?.number == 3)
+    }
+
+    @Test func reviewPageHasNothingToType() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("q-submit")))
+        #expect(d.kind == .question && !d.canAnswer)
+        #expect(d.question == "Ready to submit your answers?")
+        #expect(d.options.map(\.label) == ["Submit answers", "Cancel"])
+    }
+
+    @Test func permissionPromptIsNeverAnswered() throws {
+        let d = try #require(Dialog.read(DialogScreens.load("perm")))
+        #expect(d.kind == .permission)
+        #expect(d.question == "Do you want to proceed?")
+        #expect(d.options.count == 4 && d.focused?.label == "Yes")
+        #expect(!d.canAnswer)
+    }
+
+    @Test func longAnswerWrapsAndStillShows() {
+        let text = "a hamster named Biscuit who lives in a cage by the window and eats sunflower seeds every "
+            + "single morning, plus two goldfish called Salt and Pepper that my daughter feeds before school each day of the week"
+        #expect(Dialog.shows(text, on: DialogScreens.load("q-long")))
+    }
+
+    @Test func promptIsNotADialog() {
+        #expect(Dialog.read(PromptScreens.empty) == nil)
+        #expect(Dialog.read(PromptScreens.typed) == nil)
+        #expect(Dialog.read("") == nil)
+    }
+
+    @Test func answerTextIsTheWordsOnOneLine() {
+        let shot = URL(fileURLWithPath: "/s/1.png")
+        #expect(Outbox.answerText([.text("look "), .image(shot), .text("here\nand there"), .copied("x  y")])
+            == "look here and there x y")
+        #expect(Outbox.answerText([.image(shot)]) == nil)
     }
 }

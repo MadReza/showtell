@@ -28,7 +28,8 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "showtell-cli", dependencies: ["ShowtellCore"]),
-        .testTarget(name: "ShowtellCoreTests", dependencies: ["ShowtellCore"]),
+        // Screens: Claude Code dialogs as herdr's pane.read (format ansi) returned them.
+        .testTarget(name: "ShowtellCoreTests", dependencies: ["ShowtellCore"], resources: [.copy("Screens")]),
     ],
     swiftLanguageModes: [.v5]
 )
