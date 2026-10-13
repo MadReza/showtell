@@ -35,7 +35,7 @@ public enum PromptInput {
 
     /// The input box, or nil when the screen shows none.
     public static func read(_ screen: String) -> Box? {
-        let lines = screen.components(separatedBy: "\n").map(visibleText)
+        let lines = screen.components(separatedBy: "\n").map { visibleText($0) }
         guard let box = box(lines) else { return nil }
         var marker = ""
         var rows: [String] = []
@@ -58,7 +58,7 @@ public enum PromptInput {
 
     /// Whether Claude Code holds a stashed prompt: `› stashed` just above the box.
     public static func hasStash(_ screen: String) -> Bool {
-        let lines = screen.components(separatedBy: "\n").map(visibleText)
+        let lines = screen.components(separatedBy: "\n").map { visibleText($0) }
         guard let box = box(lines) else { return false }
         return lines[max(0, box.lowerBound - 3)..<(box.lowerBound - 1)].contains { $0.contains("› stashed") }
     }
@@ -94,7 +94,7 @@ public enum PromptInput {
 
     /// How many lines the box spans, for deciding how many clearing rounds to send.
     public static func lineCount(_ screen: String) -> Int {
-        box(screen.components(separatedBy: "\n").map(visibleText))?.count ?? 1
+        box(screen.components(separatedBy: "\n").map { visibleText($0) })?.count ?? 1
     }
 
     /// The lines of the lowest input box: from its prompt line up to the closing rule.
@@ -122,15 +122,15 @@ public enum PromptInput {
         (text.hasPrefix("Try \"") && text.hasSuffix("\"")) || text == "Press up to edit queued messages"
     }
 
-    /// The line without escape sequences, carriage returns or dim (SGR 2) text.
-    static func visibleText(_ line: String) -> String {
+    /// The line without escape sequences, carriage returns or dim (SGR 2) text (unless `keepingDim`).
+    static func visibleText(_ line: String, keepingDim: Bool = false) -> String {
         var out = ""
         var dim = false
         var it = line.unicodeScalars.makeIterator()
         while let c = it.next() {
             if c == "\r" { continue }
             guard c == "\u{1b}" else {
-                if !dim { out.unicodeScalars.append(c) }
+                if !dim || keepingDim { out.unicodeScalars.append(c) }
                 continue
             }
             guard let kind = it.next() else { break }

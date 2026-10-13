@@ -1,0 +1,22 @@
+  [0m[38;2;153;153;153mRan [0m[1m[38;2;153;153;153m1[0m[38;2;153;153;153m shell command [0m
+[0m[38;2;153;153;153m  ⎿  Interrupted · What should Claude do instead?[0m
+
+[0m[38;2;153;153;153m✻ Sautéed for 1s · done 9:23 PM[0m
+
+[0m[38;2;153;153;153m[48;2;55;55;55m❯ [0m[38;2;255;255;255m[48;2;55;55;55mUse AskUserQuestion with one multi-select question 'Which pets?' options Cat, Dog. Nothing else.[0m[48;2;55;55;55m                                                                                                        [0m
+[0m[38;2;153;153;153m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+[0m[38;2;153;153;153m← [0m[38;2;0;0;0m[48;2;177;185;249m ☒ Pets  [0m✔ Submit  →
+
+[0m[1m[38;2;255;255;255mWhich pets?[0m
+
+  [0m[38;2;153;153;153m1. [0m[ ] Cat
+         [0m[38;2;153;153;153mCat[0m
+  [0m[38;2;153;153;153m2. [0m[ ] Dog
+         [0m[38;2;153;153;153mDog[0m
+[0m[38;2;177;185;249m❯ [0m[38;2;153;153;153m3. [0m[38;2;78;186;101m[✔] [0ma hamster named Biscuit who lives in a cage by the window and eats sunflower seeds every single morning, plus two goldfish called Salt and Pepper that my daughter feeds before school each day
+         of the week
+     [0m[1mSubmit[0m
+[0m[38;2;153;153;153m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  4. Chat about this
+
+[0m[38;2;153;153;153mEnter to select · ↑/↓ to navigate · ctrl+g to edit in Nvim · Esc to cancel[0m

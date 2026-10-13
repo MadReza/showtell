@@ -1,4 +1,5 @@
 import AppKit
+import ShowtellCore
 import SwiftUI
 
 /// What the bar shows. Updated on the main thread by `AppController`.
@@ -48,6 +49,108 @@ final class OverlayModel: ObservableObject {
     var onShowHistory: (() -> Void)?
     /// The transcript's laid-out height changed; the panel decides whether to animate it.
     var onTextHeight: ((CGFloat) -> Void)?
+    /// A message held because its session shows a dialog; shown in the bar when `showsHeld`,
+    /// else in its own small panel.
+    let held = HeldModel()
+    @Published var showsHeld = false
+}
+
+/// A message held back because its session shows a dialog, and the choices for it.
+final class HeldModel: ObservableObject {
+    @Published var hold: Hold?
+    var onChoice: ((HoldChoice) -> Void)?
+}
+
+/// What is held and why, and buttons to answer the question with it, send it after, or cancel it.
+struct HeldView: View {
+    @ObservedObject var held: HeldModel
+    /// The bar's header already says it.
+    var showsTitle = true
+
+    var body: some View {
+        if let hold = held.hold {
+            VStack(alignment: .leading, spacing: 8) {
+                if showsTitle {
+                    HStack(spacing: 8) {
+                        Circle().fill(Color.orange).frame(width: 9, height: 9)
+                        Text(hold.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    }
+                }
+                Text(detail(hold)).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    if hold.canAnswer {
+                        Button("Answer the question") { held.onChoice?(.answer) }
+                            .keyboardShortcut(.defaultAction)
+                            .help("Type this message in the question's “Type something” option and send it as your answer")
+                    }
+                    if !hold.sendAfter {
+                        Button("Send after") { held.onChoice?(.sendAfter) }
+                            .help("Paste it into the prompt once the dialog closes")
+                    }
+                    Button("Cancel") { held.onChoice?(.cancel) }
+                        .help("Don't send it; History keeps it, marked cancelled")
+                    Spacer()
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func detail(_ hold: Hold) -> String {
+        var parts: [String] = []
+        if hold.sendAfter {
+            parts.append("It will be pasted into the prompt when the dialog closes.")
+        } else {
+            parts.append("It goes into the prompt only when the dialog closes, unless you choose otherwise.")
+        }
+        switch hold.kind {
+        case .question where hold.canAnswer:
+            if hold.hasPictures { parts.append("A question takes only words: its pictures stay in History.") }
+        case .question:
+            parts.append("This question has no place to type an answer.")
+        case .permission:
+            parts.append("Showtell never presses anything in a permission prompt.")
+        case .other:
+            break
+        }
+        return parts.joined(separator: " ")
+    }
+}
+
+/// A small floating panel for a held message while the bar is busy with a recording.
+final class NoticePanel: NSPanel {
+    init(held: HeldModel) {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 520, height: 90),
+                   styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
+                   backing: .buffered, defer: false)
+        isFloatingPanel = true
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = true
+        hidesOnDeactivate = false
+        if ProcessInfo.processInfo.environment["SHOWTELL_CAPTURE_BAR"] == nil { sharingType = .none }
+        let view = NSHostingView(rootView: HeldView(held: held)
+            .padding(12)
+            .frame(width: 520, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.08))))
+        contentView = view
+    }
+
+    override var canBecomeKey: Bool { true }  // so its buttons take a click
+    override var canBecomeMain: Bool { false }
+
+    /// Just under `frame` (the bar), centred on it.
+    func show(below frame: NSRect) {
+        guard let content = contentView else { return }
+        let size = content.fittingSize
+        setContentSize(size)
+        setFrameTopLeftPoint(NSPoint(x: frame.midX - size.width / 2, y: frame.minY - 8))
+        orderFrontRegardless()
+    }
 }
 
 /// Sizes the window to the bar. While the bar animates smaller, the window keeps `holdHeight`
@@ -176,6 +279,7 @@ struct OverlayView: View {
                              onHeight: { model.onTextHeight?($0) })
                 .frame(height: min(max(model.textHeight, 64), model.maxTextHeight))
             if !model.shots.isEmpty || !model.clips.isEmpty { shotStrip }
+            if model.showsHeld { HeldView(held: model.held, showsTitle: false) }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(model.hint).font(.system(size: 11)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
