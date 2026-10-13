@@ -79,6 +79,30 @@ public struct TerminalSessions: HerdrTransport {
         }
     }
 
+    public func sendKeys(_ keys: [PromptKey], pane: String) async throws {
+        guard !keys.isEmpty else { return }
+        if let p = Self.strip(pane, Self.tmuxPrefix) {
+            try Self.run(Self.tmuxPath, ["send-keys", "-t", p] + keys.map(\.tmux))
+        } else if let s = Self.strip(pane, Self.itermPrefix) {
+            try Self.iterm(s, write: keys.map(\.iterm).joined(separator: " & "), text: "")
+        } else {
+            throw HerdrError(code: "unknown_pane", message: pane)
+        }
+    }
+
+    public func typeText(_ text: String, pane: String) async throws {
+        if let p = Self.strip(pane, Self.tmuxPrefix) {
+            try Self.run(Self.tmuxPath, ["send-keys", "-t", p, "-l", "--", text])
+        } else if let s = Self.strip(pane, Self.itermPrefix) {
+            try Self.iterm(s, write: "txt", text: text)
+        } else {
+            throw HerdrError(code: "unknown_pane", message: pane)
+        }
+    }
+
+    /// tmux sends LF as is. iTerm2's `write text` is not known to keep LF from becoming Enter.
+    public func typesLineBreaks(pane: String) -> Bool { pane.hasPrefix(Self.tmuxPrefix) }
+
     /// tmux gives colours (`-e`); iTerm2's AppleScript only plain text.
     public func readScreen(pane: String) async throws -> String {
         if let p = Self.strip(pane, Self.tmuxPrefix) {
@@ -296,5 +320,25 @@ public struct AllSessions: HerdrTransport {
         } else {
             try await herdr.sendClearKeys(pane: pane, rounds: rounds)
         }
+    }
+
+    public func sendKeys(_ keys: [PromptKey], pane: String) async throws {
+        if TerminalSessions.handles(pane: pane) {
+            try await terminals.sendKeys(keys, pane: pane)
+        } else {
+            try await herdr.sendKeys(keys, pane: pane)
+        }
+    }
+
+    public func typeText(_ text: String, pane: String) async throws {
+        if TerminalSessions.handles(pane: pane) {
+            try await terminals.typeText(text, pane: pane)
+        } else {
+            try await herdr.typeText(text, pane: pane)
+        }
+    }
+
+    public func typesLineBreaks(pane: String) -> Bool {
+        TerminalSessions.handles(pane: pane) ? terminals.typesLineBreaks(pane: pane) : herdr.typesLineBreaks(pane: pane)
     }
 }

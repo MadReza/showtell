@@ -449,6 +449,22 @@ struct EntryDetail<Destinations: View>: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Cleared from the prompt:", systemImage: "eraser")
                         .font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    switch entry.draftOutcome {
+                    case .restoredFromStash:
+                        Text("Stashed in Claude Code (Ctrl+S), which put it back when the message was sent.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    case .retyped:
+                        Text("Typed back into the prompt after the message was sent.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    case .leftStashed:
+                        Text("Stashed in Claude Code (Ctrl+S): it comes back when you send the message.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    case .notRestored:
+                        Text("Not put back: \(entry.draftNotRestored ?? "unknown reason").")
+                            .font(.caption).foregroundStyle(.orange)
+                    case nil:
+                        EmptyView()
+                    }
                     Text(draft).font(.system(size: 13)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button { model.copy(draft) } label: { Label("Copy", systemImage: "doc.on.doc") }

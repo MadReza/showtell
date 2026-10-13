@@ -730,7 +730,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         let files = shotURLs.values.map(\.lastPathComponent)
         filesSending += files
-        let result = await outbox.enqueue(pieces, to: target, submit: submit, onClearedDraft: keepClearedDraft(id))
+        let result = await outbox.enqueue(pieces, to: target, submit: submit, onDraft: keepClearedDraft(id))
         doneSending(files)
         pendingSends -= 1
         switch result {
@@ -768,12 +768,18 @@ final class AppController: NSObject, NSMenuDelegate {
         historyWindow.reload()
     }
 
-    /// Saves what was in the session's prompt with the message, so a real draft isn't lost.
-    private func keepClearedDraft(_ id: String) -> @Sendable (String) -> Void {
-        { [weak self] draft in
+    /// Saves what was in the session's prompt with the message, so a real draft isn't lost,
+    /// and how it went back into the prompt.
+    private func keepClearedDraft(_ id: String) -> @Sendable (DraftEvent) -> Void {
+        { [weak self] event in
             DispatchQueue.main.async {
                 guard let self else { return }
-                do { try self.history.setClearedDraft(id, draft) } catch {
+                do {
+                    switch event {
+                    case .cleared(let draft): try self.history.setClearedDraft(id, draft)
+                    case .outcome(let outcome, let reason): try self.history.setDraftOutcome(id, outcome, reason: reason)
+                    }
+                } catch {
                     log.error("history not updated: \(error.localizedDescription, privacy: .public)")
                 }
                 self.historyWindow.reload()
@@ -808,6 +814,8 @@ final class AppController: NSObject, NSMenuDelegate {
         copy.destination = destination
         copy.failure = nil
         copy.clearedDraft = nil
+        copy.draftOutcome = nil
+        copy.draftNotRestored = nil
         copy.submitted = destination != .cursor && submit
         record(copy)
         switch destination {
@@ -828,7 +836,7 @@ final class AppController: NSObject, NSMenuDelegate {
             }
             let files = entry.shots.map(\.file)
             filesSending += files
-            let result = await outbox.enqueue(pieces, to: target, submit: submit, onClearedDraft: keepClearedDraft(id))
+            let result = await outbox.enqueue(pieces, to: target, submit: submit, onDraft: keepClearedDraft(id))
             doneSending(files)
             pendingSends -= 1
             switch result {
