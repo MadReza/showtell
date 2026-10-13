@@ -36,11 +36,14 @@ public enum DeliveryError: Error, Equatable, CustomStringConvertible {
     case stillBlocked(String)
     /// An earlier message stopped halfway; pasting this one would land on its leftovers.
     case earlierMessageFailed
+    /// The prompt held text that wouldn't clear; pasting would have joined it to the message.
+    case promptNotCleared(String)
 
     public var description: String {
         switch self {
         case .targetGone(let n): return "\(n) is no longer running in herdr"
         case .stillBlocked(let n): return "\(n) kept a dialog open; message not sent"
+        case .promptNotCleared(let n): return "\(n)'s prompt already had text that couldn't be cleared"
         case .earlierMessageFailed: return "an earlier message failed partway, so this one was held back"
         }
     }
@@ -51,9 +54,12 @@ public enum DeliveryError: Error, Equatable, CustomStringConvertible {
 /// Rules verified against Claude Code 2.1.296:
 /// - every screenshot path is its own bracketed paste, then a pause until its chip appears;
 /// - a message sent while Claude works is queued by Claude Code with its images;
-/// - nothing is pasted while the agent shows a dialog (herdr status `blocked`).
+/// - nothing is pasted while the agent shows a dialog (herdr status `blocked`);
+/// - text already in the prompt is cleared first, or it would be sent along with the message.
 public actor Outbox {
     public struct Timing: Sendable {
+        public var afterClear: Double = 0.3
+        public var clearAttempts = 3
         public var afterText: Double = 0.15
         public var afterImage: Double = 0.8
         public var beforeEnter: Double = 0.35
@@ -86,8 +92,12 @@ public actor Outbox {
     }
 
     /// Queues a message behind any message still being delivered. Returns once it is delivered.
+    /// `onClearedDraft` gets the text that was in the prompt, just before it is cleared.
     @discardableResult
-    public func enqueue(_ pieces: [Piece], to target: PinnedTarget, submit: Bool) async -> Result<PinnedTarget, Error> {
+    public func enqueue(
+        _ pieces: [Piece], to target: PinnedTarget, submit: Bool,
+        onClearedDraft: (@Sendable (String) -> Void)? = nil
+    ) async -> Result<PinnedTarget, Error> {
         let previous = tail
         lastTicket += 1
         let ticket = lastTicket
@@ -95,7 +105,7 @@ public actor Outbox {
             await previous?.value
             if ticket <= self.haltThrough { return .failure(DeliveryError.earlierMessageFailed) }
             do {
-                return .success(try await self.deliver(pieces, to: target, submit: submit))
+                return .success(try await self.deliver(pieces, to: target, submit: submit, onClearedDraft: onClearedDraft))
             } catch {
                 if self.pastedSomething { self.haltThrough = self.lastTicket }
                 self.emit(.failed(String(describing: error)))
@@ -110,11 +120,15 @@ public actor Outbox {
     private var pastedSomething = false
 
     /// Returns the target as found (its pane id may have changed).
-    func deliver(_ pieces: [Piece], to target: PinnedTarget, submit: Bool) async throws -> PinnedTarget {
+    func deliver(
+        _ pieces: [Piece], to target: PinnedTarget, submit: Bool,
+        onClearedDraft: (@Sendable (String) -> Void)? = nil
+    ) async throws -> PinnedTarget {
         guard !pieces.isEmpty else { return target }
         pastedSomething = false
         var current = try await waitUntilReady(target)
         emit(.sending(current.name))
+        try await clearPrompt(current, onClearedDraft: onClearedDraft)
 
         for piece in pieces {
             switch piece {
@@ -136,6 +150,24 @@ public actor Outbox {
         }
         emit(.delivered(current.name))
         return current
+    }
+
+    /// Empties the prompt if it holds text, and checks on screen that it is empty.
+    /// A screen without an input box (unreadable, or not Claude Code's layout) is left alone.
+    private func clearPrompt(_ target: PinnedTarget, onClearedDraft: (@Sendable (String) -> Void)?) async throws {
+        guard let screen = try? await transport.readScreen(pane: target.paneID),
+              let draft = PromptInput.parse(screen), !draft.isEmpty else { return }
+        onClearedDraft?(draft)
+        var lines = PromptInput.lineCount(screen)
+        for _ in 0..<timing.clearAttempts {
+            try await transport.sendClearKeys(pane: target.paneID, rounds: lines + 1)
+            await sleep(timing.afterClear)
+            let now = try await transport.readScreen(pane: target.paneID)
+            guard let left = PromptInput.parse(now) else { break }
+            if left.isEmpty { return }
+            lines = PromptInput.lineCount(now)
+        }
+        throw DeliveryError.promptNotCleared(target.name)
     }
 
     private func waitUntilReady(_ target: PinnedTarget) async throws -> PinnedTarget {
