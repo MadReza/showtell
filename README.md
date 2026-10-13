@@ -192,11 +192,29 @@ always reached through herdr.
 
 **Text already in the prompt:** before pasting, Showtell reads the pane's screen and looks at
 Claude Code's input box (the `❯` line between the two rules; the dim placeholder doesn't count).
-If something is typed there, it is cleared with Ctrl+E, Ctrl+K, Ctrl+U, Backspace per line (keys
-that only edit the input, never Ctrl+C, Ctrl+D or Esc), and the screen is read again. If the box
-won't empty, the message is not pasted and shows as not delivered. The cleared text is kept in
-History as "Cleared from the prompt". iTerm2 gives plain text only, so there a lone `Try "…"`
-line is taken for the placeholder.
+If something is typed there, it is taken out before pasting and put back after the message is
+sent, so your draft is where you left it:
+
+- Usually it is **stashed** with Ctrl+S (Claude Code's own prompt stash, `› stashed` above the
+  box). Claude Code puts it back by itself when the message is submitted, whether Claude is idle or
+  working, with everything in it: line breaks, pasted blocks, pictures, cursor. With Send off, it
+  stays stashed until you send the message yourself.
+- Claude Code keeps a single stash, so if you already have one, Showtell doesn't stash over it.
+  It clears the prompt instead, with Ctrl+E, Ctrl+K, Ctrl+U, Backspace per row (keys that only
+  edit the input, never Ctrl+C, Ctrl+D or Esc), after moving the cursor to the end with Down and
+  Ctrl+E. A draft taller than the box shows only some of its rows, so the box is cleared all but its
+  top row and read again until the start of the draft comes into view. If the start never shows,
+  the message is not pasted and shows as not delivered. Sending puts your stash in the prompt;
+  Showtell stashes it again and types the draft back (a hundred characters at a time, so Claude
+  Code doesn't take it for a paste), then reads it back from the screen. It isn't typed back with
+  Send off, if it held a pasted block or picture (`[Pasted text #1]`, `[Image #1]`: the label isn't
+  the content), or if it has several lines in an iTerm2 tab (`write text` may turn a line break
+  into Enter).
+
+If the box won't empty, the message is not pasted and shows as not delivered. The text is kept in
+History as "Cleared from the prompt" (as far as the box showed it), with how it was put back or why
+it wasn't. iTerm2 gives plain text only, so there a lone `Try "…"` or "Press up to edit queued
+messages" line is taken for the placeholder.
 
 **At the cursor:** each part goes through the clipboard and a synthesized ⌘V, in order; your
 clipboard is put back afterwards.
