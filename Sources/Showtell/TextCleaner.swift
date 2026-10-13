@@ -317,7 +317,7 @@ actor LlamaRunner {
     private static func chatPrompt(model: OpaquePointer, system: String, user: String) throws -> String {
         let template = llama_model_chat_template(model, nil)
         let role1 = strdup("system"), text1 = strdup(system), role2 = strdup("user"), text2 = strdup(user)
-        defer { [role1, text1, role2, text2].forEach { free($0) } }
+        defer { [role1, text1, role2, text2].forEach { free(UnsafeMutableRawPointer($0)) } }
         var messages = [llama_chat_message(role: role1, content: text1), llama_chat_message(role: role2, content: text2)]
         var buffer = [CChar](repeating: 0, count: (system.utf8.count + user.utf8.count) * 2 + 1024)
         var n = llama_chat_apply_template(template, &messages, 2, true, &buffer, Int32(buffer.count))
