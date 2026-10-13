@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import ShowtellCore
 
 // `Showtell --transcribe <audio> [term ...]` runs the speech path on a file and exits (self-test).
@@ -14,7 +15,12 @@ if arguments.count >= 3, arguments[1] == "--transcribe" {
             let final = try await engine.transcribeFile(URL(fileURLWithPath: arguments[2]), terms: terms) { text, ends, time in
                 print(String(format: "partial @%.2fs (%d new timed words): %@", time, ends.count, text))
             }
-            print("FINAL: \(final)")
+            let file = try AVAudioFile(forReading: URL(fileURLWithPath: arguments[2]))
+            let duration = Double(file.length) / file.processingFormat.sampleRate
+            print(String(format: "speech %.2f s of %.2f s", final.speech, duration))
+            print("FINAL: \(final.text)")
+            let kept = SpeechGate.keeps(final.text, duration: duration, speech: final.speech)
+            print("SENT: \(kept ? final.text : "(nothing: no speech)")")
             exit(0)
         } catch {
             print("FAILED: \(error)")

@@ -548,8 +548,12 @@ final class AppController: NSObject, NSMenuDelegate {
             model.phase = .info("Finishing…")
             let final = await speech.stop()
             if gen == generation {
-                rawTranscript = final.text
-                composer.updateTranscript(final.text, newWordStartTimes: final.wordStarts, at: final.time)
+                // A quick press, or no one speaking: the recogniser's words are made up.
+                let kept = SpeechGate.keeps(final.text, duration: final.time, speech: final.speech)
+                log.info("speech \(final.speech) s of \(final.time) s: transcript \(kept ? "kept" : "dropped", privacy: .public)")
+                let text = kept ? final.text : ""
+                rawTranscript = text
+                composer.updateTranscript(text, newWordStartTimes: kept ? final.wordStarts : [], at: final.time)
                 composer.finish(at: final.time)
                 model.text = composer.render()
                 log.info("listening stopped: \(Cleanup.wordCount(self.model.text)) words")
