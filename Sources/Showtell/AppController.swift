@@ -565,6 +565,7 @@ final class AppController: NSObject, NSMenuDelegate {
     private func finishAndSend() async {
         guard state == .recording else { return }
         guard await finishListening() else { return }
+        if nothingToSend { return spokenRoute == nil ? dropEmpty() : await deliver() }
         if settings.cleanupOnSend, cleanupChoice != nil {
             let gen = generation
             if let problem = await cleanUp() {
@@ -578,6 +579,22 @@ final class AppController: NSObject, NSMenuDelegate {
         await deliver()
     }
 
+    /// No words, screenshots or copied text left once your replacements are applied.
+    private var nothingToSend: Bool {
+        let rules = storage.replacementRules() + storage.vocabulary(forRepoAt: repoPath).map { ($0.text, $0.text) }
+        return ShotMarker.pieces(from: Vocabulary.applyReplacements(composer.render(), rules),
+                                 shots: composer.shotURLs, clips: composer.clipTexts).isEmpty
+    }
+
+    /// Listening ended with nothing to send: the bar goes, as if cancelled, and nothing is kept.
+    private func dropEmpty() {
+        log.info("nothing to send: bar dismissed")
+        composer = Composer()
+        state = .idle
+        spokenRoute = nil
+        panel.dismiss()
+    }
+
     /// The clean-up shortcut: while recording, stop listening and show the tidied text to check;
     /// while reviewing, switch between your text and the tidied one.
     private func cleanupPressed() {
@@ -585,6 +602,7 @@ final class AppController: NSObject, NSMenuDelegate {
         case .recording:
             Task {
                 guard await finishListening() else { return }
+                if nothingToSend { return spokenRoute == nil ? dropEmpty() : await deliver() }
                 let gen = generation
                 let problem = await cleanUp()
                 guard gen == generation else { return }
