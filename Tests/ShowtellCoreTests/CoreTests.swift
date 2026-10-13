@@ -918,3 +918,84 @@ enum PromptScreens {
         #expect(ShotNames.finderComment(of: unsent[1]!) == "Showtell, unsent (for showtell)\n\n" + text)
     }
 }
+
+@Suite struct WordDiffTests {
+    @Test func marksRemovedAndAddedWords() {
+        let parts = WordDiff.diff("so um I think the header is cut off", "I think the header is clipped.")
+        #expect(parts == [
+            .removed("so"), .removed("um"), .same("I"), .same("think"), .same("the"), .same("header"), .same("is"),
+            .removed("cut"), .removed("off"), .added("clipped."),
+        ])
+    }
+
+    @Test func ignoresCasePunctuationAndMarkers() {
+        let parts = WordDiff.diff("the header is cut off see this", "The header is cut off, see [📷 1] this.")
+        #expect(parts.allSatisfy { if case .same = $0 { return true } else { return false } })
+        #expect(parts.first == .same("The"))
+        #expect(WordDiff.sameWords("fix the bug", "Fix the bug. [📋 2]"))
+        #expect(!WordDiff.sameWords("fix the bug", "fix a bug"))
+        #expect(WordDiff.diff("", "") == [])
+        #expect(WordDiff.diff("", "hi") == [.added("hi")])
+    }
+
+    @Test func removedFractionLeavesOutFillers() {
+        #expect(WordDiff.removedFraction("um uh fix the bug now", "Fix the bug now.") == 0)
+        #expect(WordDiff.removedFraction("one two three four five six seven eight nine ten", "one two three four five six seven eight") == 0.2)
+        #expect(WordDiff.removedFraction("", "anything") == 0)
+    }
+}
+
+@Suite struct HistoryStageTests {
+    func makeStore() throws -> HistoryStore {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("showtell-stages-\(UUID().uuidString)")
+        let storage = Storage(root: root)
+        try storage.prepare()
+        return HistoryStore(storage: storage)
+    }
+
+    @Test func keepsOnlyTheStepsThatChangedWords() {
+        var e = HistoryEntry(destination: .cursor, text: "Fix the herdr bug.", submitted: false)
+        e.setStages(raw: "so fix the herder bug please", edited: "so fix the herder bug please",
+                    replaced: "so fix the herdr bug please", tidied: "Fix the herdr bug.", tidyModel: "Qwen 3 4B Instruct")
+        #expect(e.editedText == nil)
+        #expect(e.replacedText == "so fix the herdr bug please")
+        #expect(e.tidyInput == "so fix the herdr bug please")
+        #expect(e.tidyModel == "Qwen 3 4B Instruct")
+        #expect(e.tidyRemovedFraction == 2.0 / 6.0)
+        #expect(e.tidyDroppedWords)
+        #expect(e.changes?.contains(.removed("please")) == true)
+
+        var off = HistoryEntry(destination: .cursor, text: "typed", submitted: false)
+        off.setStages(raw: nil, edited: "typed", replaced: "typed", tidied: nil, tidyModel: nil)
+        #expect(off.tidyModel == HistoryEntry.tidyOff)
+        #expect(off.editedText == "typed")
+        #expect(off.tidiedText == nil)
+        #expect(off.tidyRemovedFraction == nil)
+        #expect(!off.tidyDroppedWords)
+        #expect(off.changes == nil)
+        #expect(off.hasStages)
+    }
+
+    @Test func roundTripsWithAndWithoutStages() throws {
+        let store = try makeStore()
+        var e = HistoryEntry(id: "new", date: Date(timeIntervalSince1970: 1_790_000_000), destination: .cursor, text: "Fix it.", submitted: false)
+        e.setStages(raw: "fix it", edited: "fix it", replaced: "fix it", tidied: "Fix it.", tidyModel: "Apple Intelligence")
+        try store.record(HistoryEntry(id: "plain", destination: .cursor, text: "no stages", submitted: false))
+        try store.record(e)
+        let loaded = store.load()
+        #expect(loaded[0] == e)
+        #expect(loaded[0].rawTranscript == "fix it")
+        #expect(loaded[1].hasStages == false)
+        #expect(loaded[1].changes == nil)
+        #expect(loaded[1].tidyRemovedFraction == nil)
+    }
+
+    @Test func readsEntriesSavedBeforeStagesWereKept() throws {
+        let store = try makeStore()
+        let old = #"[{"id":"old","date":"2026-10-01T10:00:00Z","destination":{"cursor":{}},"text":"hello","shots":[],"clips":[],"submitted":false}]"#
+        try Data(old.utf8).write(to: store.url)
+        let loaded = store.load()
+        #expect(loaded.map(\.id) == ["old"])
+        #expect(loaded[0].rawTranscript == nil && loaded[0].tidyModel == nil && !loaded[0].hasStages)
+    }
+}

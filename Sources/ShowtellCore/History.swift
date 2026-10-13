@@ -63,6 +63,21 @@ public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
     /// Why the cleared text was not put back, if it wasn't.
     public var draftNotRestored: String?
 
+    /// How the text got from your voice to what was sent, to see where words went missing.
+    /// Older entries have none of it.
+    /// The recogniser's transcript when listening stopped, before anything changed it.
+    public var rawTranscript: String?
+    /// The text after your edits in the bar, when they changed the words.
+    public var editedText: String?
+    /// The text after your replacements, when they changed the words.
+    public var replacedText: String?
+    /// What the tidy-up returned, if it ran and its text was kept.
+    public var tidiedText: String?
+    /// The tidy-up model's name, or "Off" when the text wasn't tidied.
+    public var tidyModel: String?
+
+    public static let tidyOff = "Off"
+
     public init(id: String = UUID().uuidString, date: Date = Date(), destination: HistoryDestination, text: String,
                 shots: [Shot] = [], clips: [Clip] = [], submitted: Bool, failure: String? = nil,
                 clearedDraft: String? = nil) {
@@ -93,6 +108,39 @@ public struct HistoryEntry: Codable, Equatable, Identifiable, Sendable {
             clips: clips.filter { clipNumbers.contains($0.key) }.sorted { $0.key < $1.key }
                 .map { Clip(number: $0.key, text: $0.value) },
             submitted: submitted)
+    }
+
+    /// Keeps each step from voice to message; a step that left the words as they were is not kept.
+    /// `tidyModel` nil means the tidy-up didn't run (or its text was put back).
+    public mutating func setStages(raw: String?, edited: String, replaced: String, tidied: String?, tidyModel: String?) {
+        rawTranscript = raw
+        editedText = raw.map { WordDiff.sameWords($0, edited) } == true ? nil : edited
+        replacedText = WordDiff.sameWords(edited, replaced) ? nil : replaced
+        tidiedText = tidyModel == nil ? nil : tidied
+        self.tidyModel = tidiedText == nil ? Self.tidyOff : tidyModel
+    }
+
+    /// Whether the steps from voice to message were kept (not for older entries).
+    public var hasStages: Bool { rawTranscript != nil || tidyModel != nil }
+
+    /// The text the tidy-up was given: after your edits and replacements.
+    public var tidyInput: String? {
+        guard tidiedText != nil else { return nil }
+        return replacedText ?? editedText ?? rawTranscript
+    }
+
+    /// The share of words (fillers left out) the tidy-up dropped, if it ran.
+    public var tidyRemovedFraction: Double? {
+        guard let input = tidyInput, let tidied = tidiedText else { return nil }
+        return WordDiff.removedFraction(input, tidied)
+    }
+
+    /// The tidy-up dropped enough words to look at.
+    public var tidyDroppedWords: Bool { (tidyRemovedFraction ?? 0) > 0.1 }
+
+    /// Words from what was heard to what was sent.
+    public var changes: [WordDiff.Part]? {
+        rawTranscript.map { WordDiff.diff($0, text) }
     }
 
     /// The text on one line, for the list.

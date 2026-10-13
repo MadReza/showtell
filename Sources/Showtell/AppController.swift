@@ -32,6 +32,11 @@ final class AppController: NSObject, NSMenuDelegate {
     /// The text before and after the last clean-up, so the shortcut can switch between them.
     private var beforeCleanup: String?
     private var afterCleanup: String?
+    /// The recogniser's transcript when listening stopped, kept in the history.
+    private var rawTranscript: String?
+    /// The last clean-up's model and the text it was given before your replacements.
+    private var tidyModelName: String?
+    private var beforeReplacements: String?
     private lazy var settingsWindow = SettingsWindow(storage: storage)
     private lazy var history = HistoryStore(storage: storage)
     private lazy var historyWindow = makeHistoryWindow()
@@ -415,6 +420,9 @@ final class AppController: NSObject, NSMenuDelegate {
         composer = Composer()
         beforeCleanup = nil
         afterCleanup = nil
+        rawTranscript = nil
+        tidyModelName = nil
+        beforeReplacements = nil
         spokenRoute = nil
         routeDismissed = false
         model.routeNote = ""
@@ -540,6 +548,7 @@ final class AppController: NSObject, NSMenuDelegate {
             model.phase = .info("Finishing…")
             let final = await speech.stop()
             if gen == generation {
+                rawTranscript = final.text
                 composer.updateTranscript(final.text, newWordStartTimes: final.wordStarts, at: final.time)
                 composer.finish(at: final.time)
                 model.text = composer.render()
@@ -607,7 +616,8 @@ final class AppController: NSObject, NSMenuDelegate {
         guard let choice = cleanupChoice else { return "no model picked in Settings" }
         let terms = storage.vocabulary(forRepoAt: repoPath).map(\.text)
         let rules = storage.replacementRules() + terms.map { ($0, $0) }
-        let original = Vocabulary.applyReplacements(composer.render(), rules)
+        let edited = composer.render()
+        let original = Vocabulary.applyReplacements(edited, rules)
         guard Cleanup.wordCount(original) > 0 else { return "nothing heard yet" }
         model.phase = .info("Tidying up with \(choice.name)…")
         let gen = generation
@@ -619,6 +629,8 @@ final class AppController: NSObject, NSMenuDelegate {
         case .success(let cleaned):
             beforeCleanup = original
             afterCleanup = cleaned
+            beforeReplacements = edited
+            tidyModelName = choice.name
             setText(cleaned)
             return nil
         case .failure(let failure):
@@ -698,11 +710,20 @@ final class AppController: NSObject, NSMenuDelegate {
         log.info("deliver: \(pieces.count) pieces")
         guard !pieces.isEmpty else { panel.dismiss(); return }
         saveLastMessage(rendered)
+        // Each step from voice to message, unless you put your own text back after tidying.
+        let tidied = beforeCleanup.map { $0 != rendered } == true
+        let stages = tidied
+            ? (edited: beforeReplacements ?? rendered, replaced: beforeCleanup ?? sentText, tidied: afterCleanup, model: tidyModelName)
+            : (edited: rendered, replaced: sentText, tidied: nil, model: nil)
+        let raw = rawTranscript
 
         // Kept as sent: your replacements applied, markers in place.
         func remember(_ destination: HistoryDestination, submitted: Bool) {
-            record(.sent(id: id, destination: destination, text: sentText,
-                         shots: shotURLs, clips: clipTexts, submitted: submitted))
+            var entry = HistoryEntry.sent(id: id, destination: destination, text: sentText,
+                                          shots: shotURLs, clips: clipTexts, submitted: submitted)
+            entry.setStages(raw: raw, edited: stages.edited, replaced: stages.replaced,
+                            tidied: stages.tidied, tidyModel: stages.model)
+            record(entry)
         }
 
         if toCursor {
