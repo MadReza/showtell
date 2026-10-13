@@ -445,6 +445,19 @@ struct EntryDetail<Destinations: View>: View {
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
+            if let draft = entry.clearedDraft {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Cleared from the prompt:", systemImage: "eraser")
+                        .font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    Text(draft).font(.system(size: 13)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button { model.copy(draft) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                        .controlSize(.small)
+                        .help("Copy the text that was in the prompt before this message was pasted")
+                }
+                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
             section("Message") {
                 Text(Self.styled(entry.text.isEmpty ? " " : entry.text))
                     .font(.system(size: 14))

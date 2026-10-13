@@ -150,7 +150,7 @@ keep their permissions.
 Requires macOS 14+, Swift 6 (Command Line Tools are enough), and herdr.
 
 ```sh
-swift test                      # core tests
+scripts/test.sh                 # core tests (swift test, with the testing macros plugin found)
 scripts/make-signing-cert.sh    # once: a local signing identity so permissions survive rebuilds
 scripts/install.sh              # builds and installs /Applications/Showtell.app, then opens it
 ```
@@ -189,6 +189,14 @@ gets `paste-buffer -p` per piece and `send-keys Enter`; iTerm2 gets AppleScript 
 paste markers, then a carriage return. A session waiting on a dialog (status `waiting`) is not
 pasted into. macOS asks once for permission to control iTerm2. A session that is in herdr is
 always reached through herdr.
+
+**Text already in the prompt:** before pasting, Showtell reads the pane's screen and looks at
+Claude Code's input box (the `❯` line between the two rules; the dim placeholder doesn't count).
+If something is typed there, it is cleared with Ctrl+E, Ctrl+K, Ctrl+U, Backspace per line (keys
+that only edit the input, never Ctrl+C, Ctrl+D or Esc), and the screen is read again. If the box
+won't empty, the message is not pasted and shows as not delivered. The cleared text is kept in
+History as "Cleared from the prompt". iTerm2 gives plain text only, so there a lone `Try "…"`
+line is taken for the placeholder.
 
 **At the cursor:** each part goes through the clipboard and a synthesized ⌘V, in order; your
 clipboard is put back afterwards.

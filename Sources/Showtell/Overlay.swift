@@ -8,6 +8,10 @@ final class OverlayModel: ObservableObject {
     @Published var targetName = ""
     @Published var phase: Phase = .listening
     @Published var text = ""
+    /// How tall the transcript's text is laid out; the bar grows with it up to `maxTextHeight`, then scrolls.
+    @Published var textHeight: CGFloat = 0
+    /// Set from the screen the bar is on, so the whole bar stays within about 60% of its height.
+    @Published var maxTextHeight: CGFloat = 150
     @Published var shots: [(Int, NSImage)] = []
     /// Text copied while talking, by `[📋 n]` number.
     @Published var clips: [(Int, String)] = []
@@ -42,12 +46,37 @@ final class OverlayModel: ObservableObject {
     var onToggleScreenshots: (() -> Void)?
     var onToggleText: (() -> Void)?
     var onShowHistory: (() -> Void)?
+    /// The transcript's laid-out height changed; the panel decides whether to animate it.
+    var onTextHeight: ((CGFloat) -> Void)?
+}
+
+/// Sizes the window to the bar. While the bar animates smaller, the window keeps `holdHeight`
+/// so the bar isn't cut off; it is transparent around the bar.
+final class BarHostingView: NSHostingView<OverlayView> {
+    var holdHeight: CGFloat = 0 { didSet { invalidateIntrinsicContentSize() } }
+    var onSizeChange: (() -> Void)?
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.height = max(size.height, holdHeight)
+        return size
+    }
+
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        onSizeChange?()
+    }
 }
 
 /// A floating bar that never takes focus from the app you are looking at until you click into it,
 /// and never appears in screenshots or screen recordings.
 final class OverlayPanel: NSPanel {
     let model = OverlayModel()
+    private var bar: BarHostingView!
+    /// How long the bar takes to grow or shrink with its text.
+    static let resizeDuration = 0.18
+    private var shownAt = Date.distantPast
+    private var releaseHold: DispatchWorkItem?
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 680, height: 200),
@@ -63,17 +92,68 @@ final class OverlayPanel: NSPanel {
         isMovableByWindowBackground = true
         // Keep the bar out of screenshots and recordings (SHOWTELL_CAPTURE_BAR=1 lets it in, for docs and tests).
         if ProcessInfo.processInfo.environment["SHOWTELL_CAPTURE_BAR"] == nil { sharingType = .none }
-        contentView = NSHostingView(rootView: OverlayView(model: model))
+        bar = BarHostingView(rootView: OverlayView(model: model))
+        // At once, not on the next turn: a window grown after SwiftUI has drawn shows the bar too low for a frame.
+        bar.onSizeChange = { [weak self] in self?.fitToBar() }
+        contentView = bar
+        model.onTextHeight = { [weak self] in self?.setTextHeight($0) }
+        // Dragged to another screen: the most the bar may grow changes with it.
+        NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: self,
+                                               queue: .main) { [weak self] _ in self?.fitMaxHeight() }
+    }
+
+    /// The bar grows with its text up to about 60% of the visible screen; the rest of the bar
+    /// (header, screenshots, checkboxes) takes about 160 points of that.
+    private func fitMaxHeight() {
+        guard let f = (screen ?? NSScreen.main)?.visibleFrame else { return }
+        model.maxTextHeight = max(64, f.height * 0.6 - 160)
     }
 
     override var canBecomeKey: Bool { true }  // so you can click in and edit the text
     override var canBecomeMain: Bool { false }
 
+    /// Keeps the top edge where it is, so the bar grows and shrinks at the bottom.
+    private func fitToBar() {
+        let height = bar.intrinsicContentSize.height
+        guard height > 0, abs(frame.height - height) > 0.5 else { return }
+        var f = frame
+        f.origin.y += f.height - height
+        f.size.height = height
+        setFrame(f, display: true)
+        invalidateShadow()
+    }
+
+    /// The bar follows its text with a short ease-out, but not just after it appears or is reset
+    /// for a new recording. Growing, the window takes the new height at once and the bar grows into
+    /// it; shrinking, the window waits until the bar has.
+    private func setTextHeight(_ height: CGFloat) {
+        guard height != model.textHeight else { return }
+        guard isVisible, Date().timeIntervalSince(shownAt) > 0.3 else {
+            model.textHeight = height
+            return
+        }
+        let duration = Self.resizeDuration
+        if height < model.textHeight {
+            releaseHold?.cancel()
+            bar.holdHeight = max(bar.holdHeight, frame.height)
+            let release = DispatchWorkItem { [weak self] in self?.bar.holdHeight = 0 }
+            releaseHold = release
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.02, execute: release)
+        }
+        withAnimation(.easeOut(duration: duration)) { model.textHeight = height }
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.02) { [weak self] in self?.invalidateShadow() }
+    }
+
     func present() {
+        shownAt = Date()
+        releaseHold?.cancel()
+        bar.holdHeight = 0
+        fitToBar()
         if let screen = NSScreen.main {
             let f = screen.visibleFrame
             setFrameTopLeftPoint(NSPoint(x: f.midX - frame.width / 2, y: f.maxY - 12))
         }
+        fitMaxHeight()
         alphaValue = 1
         orderFrontRegardless()
     }
@@ -91,8 +171,10 @@ struct OverlayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            TranscriptEditor(text: model.text, onUserEdit: { model.onUserEdit?($0) })
-                .frame(minHeight: 64, maxHeight: 150)
+            // The panel keeps its top edge when its content grows, so the bar grows downwards.
+            TranscriptEditor(text: model.text, onUserEdit: { model.onUserEdit?($0) },
+                             onHeight: { model.onTextHeight?($0) })
+                .frame(height: min(max(model.textHeight, 64), model.maxTextHeight))
             if !model.shots.isEmpty || !model.clips.isEmpty { shotStrip }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(model.hint).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -113,6 +195,8 @@ struct OverlayView: View {
         .frame(width: 680)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        // Pinned to the window's top while the window is taller than the bar (see `BarHostingView`).
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
     }
 
     private var header: some View {
@@ -239,12 +323,13 @@ struct OverlayView: View {
 }
 
 /// An NSTextView that accepts transcript updates without moving your cursor,
-/// and reports only the changes you type.
+/// and reports only the changes you type, and how tall its text is.
 struct TranscriptEditor: NSViewRepresentable {
     var text: String
     var onUserEdit: (String) -> Void
+    var onHeight: (CGFloat) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onUserEdit: onUserEdit) }
+    func makeCoordinator() -> Coordinator { Coordinator(onUserEdit: onUserEdit, onHeight: onHeight) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -259,13 +344,19 @@ struct TranscriptEditor: NSViewRepresentable {
         tv.textContainerInset = NSSize(width: 0, height: 4)
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
+        // The text wraps again when the view gets its width.
+        tv.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.frameDidChange(_:)),
+                                               name: NSView.frameDidChangeNotification, object: tv)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.onUserEdit = onUserEdit
+        context.coordinator.onHeight = onHeight
         let tv = scroll.documentView as! NSTextView
         guard tv.string != text else { return }
+        defer { context.coordinator.measure(tv) }
         let selection = tv.selectedRanges
         let atEnd = tv.selectedRange().location >= (tv.string as NSString).length
         context.coordinator.applyingUpdate = true
@@ -286,11 +377,30 @@ struct TranscriptEditor: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var onUserEdit: (String) -> Void
+        var onHeight: (CGFloat) -> Void
         var applyingUpdate = false
-        init(onUserEdit: @escaping (String) -> Void) { self.onUserEdit = onUserEdit }
+        private var lastHeight: CGFloat = -1
+        init(onUserEdit: @escaping (String) -> Void, onHeight: @escaping (CGFloat) -> Void) {
+            self.onUserEdit = onUserEdit
+            self.onHeight = onHeight
+        }
         func textDidChange(_ notification: Notification) {
-            guard !applyingUpdate, let tv = notification.object as? NSTextView else { return }
+            guard let tv = notification.object as? NSTextView else { return }
+            measure(tv)
+            guard !applyingUpdate else { return }
             onUserEdit(tv.string)
+        }
+        @objc func frameDidChange(_ notification: Notification) {
+            if let tv = notification.object as? NSTextView { measure(tv) }
+        }
+        /// Reports the laid-out height of the text, after this view update (the bar resizes to it).
+        func measure(_ tv: NSTextView) {
+            guard let lm = tv.layoutManager, let tc = tv.textContainer, tc.size.width > 0 else { return }
+            lm.ensureLayout(for: tc)
+            let height = ceil(lm.usedRect(for: tc).height + tv.textContainerInset.height * 2)
+            guard height != lastHeight else { return }
+            lastHeight = height
+            DispatchQueue.main.async { [onHeight] in onHeight(height) }
         }
     }
 }
