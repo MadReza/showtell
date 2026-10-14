@@ -379,7 +379,7 @@ final class AppController: NSObject, NSMenuDelegate {
         routeAgents = Dictionary(agents.map { ($0.paneID, $0) }, uniquingKeysWith: { a, _ in a })
         routeCandidates = agents.map { agent in
             let title = agent.displayName.components(separatedBy: " · ").first ?? agent.displayName
-            return Routing.Candidate(id: agent.paneID, names: [agent.folderName, title])
+            return Routing.Candidate(id: agent.paneID, names: [agent.folderName, title] + [agent.title].compactMap { $0 })
         }
     }
 
