@@ -77,6 +77,11 @@ public struct Settings: Codable, Equatable, Sendable {
     /// While recording: switch either capture on or off. Changes the default too.
     public var screenshotsToggleShortcut = Shortcut.chord(34, 0x1000 | 0x800, "I")
     public var copiedTextToggleShortcut = Shortcut.chord(17, 0x1000 | 0x800, "T")
+    /// The language you dictate in; stays for the next messages.
+    public var language = DictationLanguage.english
+    /// While recording: switch to the next or previous language.
+    public var nextLanguageShortcut = Shortcut.chord(124, 0x1000 | 0x800, "→")
+    public var previousLanguageShortcut = Shortcut.chord(123, 0x1000 | 0x800, "←")
 
     public init() {}
 
@@ -85,6 +90,7 @@ public struct Settings: Codable, Equatable, Sendable {
         case cleanupModel, cleanupOnSend, cleanupShortcut
         case sendToggleShortcut, nextTargetShortcut, previousTargetShortcut, spokenRouting, spokenRouteSticks
         case captureScreenshots, captureCopiedText, screenshotsToggleShortcut, copiedTextToggleShortcut
+        case language, nextLanguageShortcut, previousLanguageShortcut
         case hotKeyCode, hotKeyModifiers, tapKey  // before the Settings window (v0.1)
     }
 
@@ -116,6 +122,10 @@ public struct Settings: Codable, Equatable, Sendable {
         captureCopiedText = try c.decodeIfPresent(Bool.self, forKey: .captureCopiedText) ?? d.captureCopiedText
         screenshotsToggleShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .screenshotsToggleShortcut) ?? d.screenshotsToggleShortcut
         copiedTextToggleShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .copiedTextToggleShortcut) ?? d.copiedTextToggleShortcut
+        // A language this build doesn't know (from a newer one) falls back to English.
+        language = try c.decodeIfPresent(String.self, forKey: .language).flatMap(DictationLanguage.init(rawValue:)) ?? d.language
+        nextLanguageShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .nextLanguageShortcut) ?? d.nextLanguageShortcut
+        previousLanguageShortcut = try c.decodeIfPresent(Shortcut.self, forKey: .previousLanguageShortcut) ?? d.previousLanguageShortcut
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -138,6 +148,9 @@ public struct Settings: Codable, Equatable, Sendable {
         try c.encode(captureCopiedText, forKey: .captureCopiedText)
         try c.encode(screenshotsToggleShortcut, forKey: .screenshotsToggleShortcut)
         try c.encode(copiedTextToggleShortcut, forKey: .copiedTextToggleShortcut)
+        try c.encode(language, forKey: .language)
+        try c.encode(nextLanguageShortcut, forKey: .nextLanguageShortcut)
+        try c.encode(previousLanguageShortcut, forKey: .previousLanguageShortcut)
     }
 }
 

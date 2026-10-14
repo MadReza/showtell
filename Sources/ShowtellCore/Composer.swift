@@ -80,6 +80,20 @@ public struct Composer: Sendable {
         finished = true
     }
 
+    /// Listening restarts with a new recogniser (another language) whose transcript and clock start
+    /// from zero: everything heard so far, with its markers placed, stays as it is, like an edit.
+    public mutating func restartTranscript(at time: Double, lag: Double? = nil) {
+        finish(at: time)
+        frozenText = render()
+        for i in shots.indices { shots[i].frozen = true }
+        engineText = ""
+        wordStarts = []
+        history = []
+        frozenEngine = []
+        finished = false
+        if let lag { self.lag = lag }
+    }
+
     /// Records a screenshot taken `time` seconds into the recording. Returns its marker number.
     @discardableResult
     public mutating func addShot(_ url: URL, at time: Double) -> Int {

@@ -1264,3 +1264,104 @@ enum DialogScreens {
         #expect(Outbox.answerText([.image(shot)]) == nil)
     }
 }
+
+@Suite struct LanguageTests {
+    @Test func cyclesBothWaysAndWraps() {
+        #expect(DictationLanguage.allCases == [.english, .french])
+        #expect(DictationLanguage.english.moved(by: 1) == .french)
+        #expect(DictationLanguage.french.moved(by: 1) == .english)
+        #expect(DictationLanguage.english.moved(by: -1) == .french)
+        #expect(DictationLanguage.french.moved(by: -1) == .english)
+        #expect(DictationLanguage.english.moved(by: 2) == .english)
+        #expect(DictationLanguage.english.moved(by: -3) == .french)
+    }
+
+    @Test func namesAndLocales() {
+        #expect(DictationLanguage.english.name == "English" && DictationLanguage.french.name == "Français")
+        #expect(DictationLanguage.english.localeIdentifier == "en-US")
+        #expect(DictationLanguage.french.localeIdentifier.hasPrefix("fr-"))
+        #expect(DictationLanguage.english.isEnglish && DictationLanguage.french.isFrench)
+    }
+
+    @Test func settingsKeepTheLanguageAndItsShortcuts() throws {
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.language == .english)
+        #expect(old.nextLanguageShortcut.label == "⌃⌥→" && old.previousLanguageShortcut.label == "⌃⌥←")
+        var s = Settings()
+        s.language = .french
+        s.nextLanguageShortcut = .chord(37, 0x1000 | 0x800, "L")
+        s.previousLanguageShortcut = .tap("rightOption")
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        #expect(back == s && back.language == .french)
+    }
+
+    @Test func unknownLanguageFallsBackToEnglish() throws {
+        let json = #"{"language":"de","submitOnSecondPress":false}"#
+        let s = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        #expect(s.language == .english && s.submitOnSecondPress == false)
+    }
+
+    @Test func languagePersistsOnDisk() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("showtell-language-\(UUID().uuidString)")
+        let storage = Storage(root: root)
+        try storage.prepare()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var s = storage.loadSettings()
+        #expect(s.language == .english)
+        s.language = s.language.moved(by: 1)
+        storage.save(s)
+        #expect(storage.loadSettings().language == .french)
+        let json = try String(contentsOf: storage.settingsURL, encoding: .utf8)
+        #expect(json.contains(#""language" : "fr""#))
+    }
+
+    @Test func restartKeepsWhatWasHeardAndCarriesOn() {
+        var c = Composer()
+        c.updateTranscript("open the settings", newWordStartTimes: [0.1, 0.5, 0.8], at: 1)
+        c.addShot(URL(fileURLWithPath: "/tmp/a.png"), at: 0.6)
+        c.updateTranscript("open the settings window", newWordStartTimes: [1.2], at: 2)
+        c.restartTranscript(at: 2, lag: 1)
+        #expect(c.lag == 1)
+        #expect(c.render() == "open the [📷 1] settings window")
+        // The new recogniser starts from nothing, on its own clock.
+        c.updateTranscript("et ouvre", newWordStartTimes: [0.2, 0.5], at: 1)
+        #expect(c.render() == "open the [📷 1] settings window et ouvre")
+        c.addShot(URL(fileURLWithPath: "/tmp/b.png"), at: 0.7)
+        c.updateTranscript("et ouvre le fichier", newWordStartTimes: [0.9, 1.1], at: 2)
+        c.finish(at: 2)
+        #expect(c.render() == "open the [📷 1] settings window et ouvre [📷 2] le fichier")
+    }
+
+    @Test func restartWithNothingHeardChangesNothing() {
+        var c = Composer()
+        c.restartTranscript(at: 0.3)
+        c.updateTranscript("bonjour", newWordStartTimes: [0.1], at: 1)
+        #expect(c.render() == "bonjour")
+    }
+
+    @Test func frenchFillersAreDroppedLikeEnglishOnes() {
+        #expect(!SpeechGate.keeps("Euh.", duration: 1.5, speech: 0.2))
+        #expect(!SpeechGate.keeps("Oui.", duration: 1.5, speech: 0.2))
+        #expect(SpeechGate.keeps("Oui.", duration: 1.2, speech: 0.45))
+        #expect(SpeechGate.keeps("Ça marche.", duration: 0.9, speech: 0.2))
+        #expect(SpeechGate.keeps("Il a raison.", duration: 1.0, speech: 0.3))
+    }
+
+    @Test func cleanupKeepsFrenchInFrench() {
+        let english = Cleanup.instructions(terms: ["herdr"])
+        let french = Cleanup.instructions(terms: ["herdr"], language: .french)
+        #expect(!english.contains("French"))
+        #expect(french.contains("never translate"))
+        #expect(french.hasPrefix(english.components(separatedBy: "\nThese names").first!))
+        #expect(french.hasSuffix("These names are spelled exactly like this: herdr."))
+        let text = "Peux-tu ouvrir le fichier [📷 1] et vérifier les réglages ?"
+        #expect(Cleanup.accept(original: text, cleaned: "Voici le texte corrigé : " + text, terms: []) == text)
+        #expect(Cleanup.join(["Regarde ça", "[📷 1]", "Je pense que ça plante."]) == "Regarde ça [📷 1] je pense que ça plante.")
+    }
+
+    @Test func replacementsWorkOnAccentedWords() {
+        let rules = Vocabulary.replacements("hérder => herdr\n")
+        #expect(Vocabulary.applyReplacements("ouvre hérder et hérderé", rules) == "ouvre herdr et hérderé")
+        #expect(Vocabulary.applyReplacements("le Showtell marche", [("showtell", "Showtell")]) == "le Showtell marche")
+    }
+}

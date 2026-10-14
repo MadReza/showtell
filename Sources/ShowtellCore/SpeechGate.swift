@@ -12,10 +12,12 @@ public enum SpeechGate {
     public static let fillerSpeech = 0.3
     /// Silero's usual speech probability threshold.
     public static let vadThreshold: Float = 0.5
-    /// The words the recogniser makes up from noise, or that you'd say only to yourself.
+    /// The words the recogniser makes up from noise, or that you'd say only to yourself
+    /// (English, then French).
     public static let fillers: Set<String> = [
         "yeah", "yes", "yep", "uh", "um", "umm", "uhm", "mm", "mhm", "hmm", "ah", "oh",
         "okay", "ok", "the", "a",
+        "oui", "ouais", "euh", "heu", "hum", "ben", "bah", "bon", "hein", "le", "la",
     ]
 
     /// Keep the transcript of a recording `duration` seconds long holding `speech` seconds of speech?
