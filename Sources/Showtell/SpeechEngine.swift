@@ -4,7 +4,8 @@ import Foundation
 import ShowtellCore
 
 /// Live local transcription: microphone → FluidAudio streaming Parakeet, with your
-/// terms boosted. An actor, so start, stop and cancel never overlap.
+/// terms boosted, for English; Apple's on-device recogniser for French (`FrenchRecognizer`).
+/// An actor, so start, stop and cancel never overlap.
 actor SpeechEngine {
     enum State: Equatable, Sendable { case notLoaded, loading(String), ready, failed(String) }
 
@@ -13,6 +14,10 @@ actor SpeechEngine {
 
     struct NoMicrophone: LocalizedError {
         var errorDescription: String? { "no microphone input is available" }
+    }
+
+    struct NeedsMacOS26: LocalizedError {
+        var errorDescription: String? { "French dictation needs macOS 26" }
     }
 
     private(set) var state: State = .notLoaded
@@ -28,6 +33,8 @@ actor SpeechEngine {
     private let clock = AudioClock()
     private var vad: VadManager?
     private var meter: SpeechMeter?
+    /// The recording's French recogniser (a `FrenchRecognizer`); nil while English runs.
+    private var french: AnyObject?
 
     init(onState: @escaping @Sendable (State) -> Void) {
         self.onState = onState
@@ -52,11 +59,27 @@ actor SpeechEngine {
     /// Seconds of microphone audio captured since `start` (the clock screenshots are stamped with).
     nonisolated var captured: Double { clock.captured }
 
-    func start(terms: [VocabularyTerm], onUpdate: @escaping Update) async throws {
+    /// Downloads the language's recogniser if this Mac doesn't have it yet. English is loaded by `load`.
+    func prepare(_ language: DictationLanguage) async throws {
+        guard language.isFrench else { return }
+        guard #available(macOS 26.0, *) else { throw NeedsMacOS26() }
+        try await FrenchRecognizer.prepare(Locale(identifier: language.localeIdentifier))
+    }
+
+    func start(language: DictationLanguage = .english, terms: [VocabularyTerm], onUpdate: @escaping Update) async throws {
         await stopAudio()
-        try await asr.reset()
-        sawFirstToken = false
-        await configureBoost(terms)
+        if #available(macOS 26.0, *), let leftover = french as? FrenchRecognizer { await leftover.cancel() }  // a start that failed
+        french = nil
+        if language.isFrench {
+            guard #available(macOS 26.0, *) else { throw NeedsMacOS26() }
+            let locale = Locale(identifier: language.localeIdentifier)
+            try await FrenchRecognizer.prepare(locale)
+            french = try await FrenchRecognizer(locale: locale, terms: terms.map(\.text))
+        } else {
+            try await asr.reset()
+            sawFirstToken = false
+            await configureBoost(terms)
+        }
 
         let engine = AVAudioEngine()  // fresh each time: picks up the current input device
         let format = engine.inputNode.outputFormat(forBus: 0)
@@ -88,6 +111,21 @@ actor SpeechEngine {
             try? engine.start()
         }
 
+        if #available(macOS 26.0, *), let french = french as? FrenchRecognizer {
+            pump = Task {
+                var last = Date.distantPast
+                for await buffer in stream {
+                    french.append(buffer)
+                    await meter.add(buffer)
+                    clock.didProcess(buffer.frameLength, rate: buffer.format.sampleRate)
+                    guard Date().timeIntervalSince(last) >= 0.25, !Task.isCancelled else { continue }
+                    last = Date()
+                    if !Task.isCancelled { onUpdate(french.transcript, french.consumeWordStarts(), clock.processed) }
+                }
+            }
+            return
+        }
+
         // One consumer keeps audio in order; the transcript is refreshed about 4 times a second.
         pump = Task { [asr] in
             var last = Date.distantPast
@@ -109,21 +147,37 @@ actor SpeechEngine {
     /// the last word timings, the audio time it covers and the seconds of it that were speech.
     func stop() async -> (text: String, wordStarts: [Double], time: Double, speech: Double) {
         await stopAudio(drain: true)
+        if #available(macOS 26.0, *), let recognizer = french as? FrenchRecognizer {
+            french = nil
+            let text = await recognizer.finish()
+            return (text, recognizer.consumeWordStarts(), clock.processed, await takeSpeechSeconds())
+        }
         var text = await asr.getPartialTranscript()
         if let final = try? await asr.finish() { text = final }
+        return (text, await newWordStarts(), clock.processed, await takeSpeechSeconds())
+    }
+
+    private func takeSpeechSeconds() async -> Double {
         let speech = await meter?.speechSeconds() ?? 0
         meter = nil
-        return (text, await newWordStarts(), clock.processed, speech)
+        return speech
     }
 
     func cancel() async {
         await stopAudio()
+        if #available(macOS 26.0, *), let recognizer = french as? FrenchRecognizer {
+            french = nil
+            await recognizer.cancel()
+            return
+        }
         try? await asr.reset()
         sawFirstToken = false
     }
 
     /// Self-test: streams an audio file through the same recogniser, in quarter-second chunks.
-    func transcribeFile(_ url: URL, terms: [VocabularyTerm], onUpdate: Update) async throws -> (text: String, speech: Double) {
+    func transcribeFile(_ url: URL, language: DictationLanguage = .english, terms: [VocabularyTerm],
+                        onUpdate: Update) async throws -> (text: String, speech: Double) {
+        if language.isFrench { return try await transcribeFrenchFile(url, language: language, terms: terms, onUpdate: onUpdate) }
         try await asr.reset()
         sawFirstToken = false
         await configureBoost(terms)
@@ -142,6 +196,28 @@ actor SpeechEngine {
         }
         let text = try await asr.finish()
         onUpdate(text, await newWordStarts(), Double(file.length) / format.sampleRate)
+        return (text, await meter.speechSeconds())
+    }
+
+    private func transcribeFrenchFile(_ url: URL, language: DictationLanguage, terms: [VocabularyTerm],
+                                      onUpdate: Update) async throws -> (text: String, speech: Double) {
+        guard #available(macOS 26.0, *) else { throw NeedsMacOS26() }
+        let locale = Locale(identifier: language.localeIdentifier)
+        try await FrenchRecognizer.prepare(locale)
+        let recognizer = try await FrenchRecognizer(locale: locale, terms: terms.map(\.text))
+        let file = try AVAudioFile(forReading: url)
+        let format = file.processingFormat
+        let chunk = AVAudioFrameCount(format.sampleRate * 0.25)
+        let meter = SpeechMeter(vad: vad)
+        while file.framePosition < file.length {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { break }
+            try file.read(into: buffer, frameCount: chunk)
+            recognizer.append(buffer)
+            await meter.add(buffer)
+            onUpdate(recognizer.transcript, recognizer.consumeWordStarts(), Double(file.framePosition) / format.sampleRate)
+        }
+        let text = await recognizer.finish()
+        onUpdate(text, recognizer.consumeWordStarts(), Double(file.length) / format.sampleRate)
         return (text, await meter.speechSeconds())
     }
 
