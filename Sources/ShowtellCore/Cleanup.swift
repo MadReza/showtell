@@ -53,7 +53,7 @@ public struct CleanupModel: Equatable, Sendable, Identifiable {
 
 /// The instructions and the safety checks around a clean-up.
 public enum Cleanup {
-    public static func instructions(terms: [String]) -> String {
+    public static func instructions(terms: [String], language: DictationLanguage = .english) -> String {
         var s = """
         You tidy up text that someone dictated to a coding assistant. Return the same message with:
         - punctuation, capital letters and sentence breaks fixed;
@@ -68,6 +68,10 @@ public enum Cleanup {
         Example. Dictated: so um can you open the profile page [Screenshot 1] and uh the save button does nothing on version three point one you know
         Tidied: Can you open the profile page [Screenshot 1]? The save button does nothing on version 3.1.
         """
+        if language.isFrench {
+            s += "\nThis message is in French. Keep it in French and never translate it into English; the example above only shows the kind of changes. "
+                + "French filler words include euh, ben, bon, genre, tsé, là at the end of a phrase. Use French punctuation and number conventions."
+        }
         let words = terms.filter { !$0.isEmpty }
         if !words.isEmpty {
             s += "\nThese names are spelled exactly like this: " + words.joined(separator: ", ") + "."
@@ -79,7 +83,8 @@ public enum Cleanup {
     /// survive in the same order, your terms must stay, and the length must stay about the same.
     public static func accept(original: String, cleaned raw: String, terms: [String]) -> String? {
         var cleaned = fromModelText(raw).trimmingCharacters(in: .whitespacesAndNewlines)
-        for preamble in ["Here is the tidied text:", "Here's the tidied text:", "Tidied text:", "Here is the text:"] {
+        for preamble in ["Here is the tidied text:", "Here's the tidied text:", "Tidied text:", "Here is the text:",
+                         "Voici le texte corrigé :", "Voici le texte corrigé:", "Texte corrigé :", "Texte corrigé:"] {
             if cleaned.lowercased().hasPrefix(preamble.lowercased()) {
                 cleaned = String(cleaned.dropFirst(preamble.count)).trimmingCharacters(in: .whitespacesAndNewlines)
             }

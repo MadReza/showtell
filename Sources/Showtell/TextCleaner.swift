@@ -140,14 +140,15 @@ final class TextCleaner: ObservableObject {
         }
     }
 
-    func clean(_ text: String, terms: [String], with model: CleanupModel) async -> Result<String, Failure> {
+    func clean(_ text: String, terms: [String], language: DictationLanguage = .english,
+               with model: CleanupModel) async -> Result<String, Failure> {
         switch status(model) {
         case .ready: break
         case .needsDownload: return .failure(Failure(description: "\(model.name) isn't downloaded yet (Settings → Tidy up text)"))
         case .downloading: return .failure(Failure(description: "\(model.name) is still downloading"))
         case .unavailable(let reason): return .failure(Failure(description: reason))
         }
-        let instructions = Cleanup.instructions(terms: terms)
+        let instructions = Cleanup.instructions(terms: terms, language: language)
         do {
             let raw = try await run(model, instructions: instructions, input: Cleanup.modelText(text))
             lastRaw = raw

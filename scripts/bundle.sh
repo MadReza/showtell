@@ -42,6 +42,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <string>Showtell finds Claude Code sessions in iTerm2 tabs and pastes your message into the one you opened.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Showtell transcribes what you say, on this Mac, and sends it to the Claude Code session you opened.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Showtell uses Apple's on-device recogniser for French dictation; nothing leaves this Mac.</string>
 </dict>
 </plist>
 PLIST

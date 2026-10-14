@@ -140,6 +140,10 @@ struct SettingsView: View {
         "\(s.previousTargetShortcut.label) / \(s.nextTargetShortcut.label)"
     }
 
+    static func languagePair(_ s: ShowtellCore.Settings) -> String {
+        "\(s.previousLanguageShortcut.label) / \(s.nextLanguageShortcut.label)"
+    }
+
     var body: some View {
         Form {
             Section("Shortcuts") {
@@ -153,6 +157,17 @@ struct SettingsView: View {
                 Text("The last five work while you talk: \(model.settings.sendToggleShortcut.label) ticks or unticks Send in the bar (Enter after pasting, or leave the text in Claude's input), the session shortcuts move this message to the next or previous session, or to the cursor, and the last two tick or untick Screenshots and Copied text in the bar. Every choice stays for the next message.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Click a shortcut, then press the new one: a key with modifiers such as ⌃⌥Space, or tap a single modifier such as the left ⌥. Esc on its own works for cancelling. Press nothing for 2 seconds to keep the old one.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Language") {
+                Picker("Dictate in", selection: $model.settings.language) {
+                    ForEach(DictationLanguage.allCases, id: \.self) { Text($0.name).tag($0) }
+                }
+                LabeledContent("Next language") { ShortcutField(model: model, path: \.nextLanguageShortcut) }
+                LabeledContent("Previous language") { ShortcutField(model: model, path: \.previousLanguageShortcut) }
+                Text("While you talk, \(Self.languagePair(model.settings)) switches the language in the bar: what you said so far stays, and Showtell listens in the new language from there. The choice stays for the next message.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("English uses Parakeet with your words boosted. French uses Apple's on-device recogniser (macOS 26); macOS downloads its French model once, and your words are offered to it as hints. Spoken destinations (“send this to showtell”) are understood in English only.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Behaviour") {

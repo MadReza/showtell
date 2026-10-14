@@ -30,6 +30,12 @@ final class OverlayModel: ObservableObject {
     @Published var showsSubmit = true
     @Published var submitShortcut = ""
     @Published var targetShortcuts = ""
+    /// The language you are dictating in ("Français QC"), shown beside the session; empty hides it.
+    @Published var languageName = ""
+    @Published var languageShortcuts = ""
+    /// Bumped whenever the language changes during a message: its name pulses like the session's.
+    @Published var languagePulse = 0
+    @Published var languagePulsing = false
     /// What the spoken destination was ("heard “for the showtell session”"), or why it was ignored.
     @Published var routeNote = ""
     @Published var routeWarning = false
@@ -270,6 +276,7 @@ final class OverlayPanel: NSPanel {
 struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     private var pulse: Bool { model.pulsing }
+    private var languagePulse: Bool { model.languagePulsing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -348,6 +355,21 @@ struct OverlayView: View {
             }
             .buttonStyle(.plain)
             .help("Send this message to another session (\(model.targetShortcuts) moves through the list)")
+            if !model.languageName.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "globe").font(.system(size: 11))
+                        .foregroundStyle(languagePulse ? Color.white : Color.secondary)
+                    Text(model.languageName).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    if !model.languageShortcuts.isEmpty {
+                        Text(model.languageShortcuts).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(languagePulse ? Color.accentColor : Color.white.opacity(0.08), in: Capsule())
+                .scaleEffect(languagePulse ? 1.08 : 1, anchor: .trailing)
+                .shadow(color: Color.accentColor.opacity(languagePulse ? 0.8 : 0), radius: languagePulse ? 10 : 0)
+                .help("The language you are speaking (\(model.languageShortcuts) switches it)")
+            }
             Button { model.onShowHistory?() } label: {
                 Image(systemName: "clock.arrow.circlepath").font(.system(size: 12)).foregroundStyle(.secondary)
             }
@@ -360,6 +382,13 @@ struct OverlayView: View {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.45)) { model.pulsing = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                 withAnimation(.easeOut(duration: 0.9)) { model.pulsing = false }
+            }
+        }
+        .onChange(of: model.languagePulse) { _, _ in
+            // The language changed: the same bounce and glow as a new destination.
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.45)) { model.languagePulsing = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                withAnimation(.easeOut(duration: 0.9)) { model.languagePulsing = false }
             }
         }
     }
