@@ -59,6 +59,11 @@ final class AppController: NSObject, NSMenuDelegate {
     private var generation = 0
     private var speechStart: Task<Bool, Never>?
     private var speechListening = false
+    /// Bumped whenever listening restarts within a recording (a language switch), so late updates
+    /// from the recogniser it replaced are ignored.
+    private var speechSegment = 0
+    /// A French model macOS is still fetching, or why it couldn't.
+    private var languageNote: String?
     private var pendingSends = 0
     private var ticker: Timer?
     private var reappearWork: DispatchWorkItem?
@@ -133,6 +138,12 @@ final class AppController: NSObject, NSMenuDelegate {
         center.addObserver(forName: .init("dev.showtell.previous"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.moveTarget(by: -1) }
         }
+        center.addObserver(forName: .init("dev.showtell.nextLanguage"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moveLanguage(by: 1) }
+        }
+        center.addObserver(forName: .init("dev.showtell.previousLanguage"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moveLanguage(by: -1) }
+        }
         center.addObserver(forName: .init("dev.showtell.target"), object: nil, queue: .main) { [weak self] note in
             let target = note.object as? String
             MainActor.assumeIsolated {
@@ -151,6 +162,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
 
         Task { await speech.load() }
+        prepareLanguage(settings.language)
         _ = sessionsNow()  // look up tmux and iTerm2 sessions early, so the first menu shows them
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted {
             ScreenshotKeyMonitor.askForPermission()
@@ -188,7 +200,8 @@ final class AppController: NSObject, NSMenuDelegate {
     /// Listened for only while recording or reviewing, in this order.
     private var barShortcuts: [Shortcut] {
         [settings.sendToggleShortcut, settings.nextTargetShortcut, settings.previousTargetShortcut,
-         settings.screenshotsToggleShortcut, settings.copiedTextToggleShortcut]
+         settings.screenshotsToggleShortcut, settings.copiedTextToggleShortcut,
+         settings.nextLanguageShortcut, settings.previousLanguageShortcut]
     }
 
     private func registerMainHotKey() {
@@ -213,6 +226,7 @@ final class AppController: NSObject, NSMenuDelegate {
         }
         updateScreenshotKeys()
         if new.cleanupModel != old.cleanupModel, let model = cleanupChoice { cleaner.prepare(model) }
+        if new.language != old.language { languageChanged() }
         if needsAccessibility, !ScreenshotKeyMonitor.isTrusted { watchForTrust() }
     }
 
@@ -258,6 +272,8 @@ final class AppController: NSObject, NSMenuDelegate {
             ShortcutBinding(settings.previousTargetShortcut, hotKeys: hotKeys) { [weak self] in self?.moveTarget(by: -1) },
             ShortcutBinding(settings.screenshotsToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleScreenshotsInBar() },
             ShortcutBinding(settings.copiedTextToggleShortcut, hotKeys: hotKeys) { [weak self] in self?.toggleCopiedTextInBar() },
+            ShortcutBinding(settings.nextLanguageShortcut, hotKeys: hotKeys) { [weak self] in self?.moveLanguage(by: 1) },
+            ShortcutBinding(settings.previousLanguageShortcut, hotKeys: hotKeys) { [weak self] in self?.moveLanguage(by: -1) },
         ]
         for (binding, shortcut) in zip(barBindings, barShortcuts) where !binding.ok {
             log.error("\(shortcut.label, privacy: .public) is taken by another app")
@@ -332,6 +348,44 @@ final class AppController: NSObject, NSMenuDelegate {
         updateBarControls()
     }
 
+    /// The language shortcuts: this message, from now on, and the next ones are heard in the next
+    /// or previous language.
+    private func moveLanguage(by step: Int) {
+        guard state != .idle else { return }
+        settings.language = settings.language.moved(by: step)
+        storage.save(settings)
+        settingsWindow.update(settings)
+        languageChanged()
+    }
+
+    /// The language changed (shortcut, Settings or menu): fetch its model if needed, show it with a
+    /// pulse, and while talking carry on listening in it.
+    private func languageChanged() {
+        log.info("language \(self.settings.language.rawValue, privacy: .public)")
+        prepareLanguage(settings.language)
+        guard state != .idle else { return }
+        model.languagePulse += 1
+        if state == .recording { startSpeech(after: speechStart) }
+        updateBarControls()
+    }
+
+    /// macOS downloads a French model the first time it is used; start that early.
+    private func prepareLanguage(_ language: DictationLanguage) {
+        guard language.isFrench else {
+            languageNote = nil
+            return
+        }
+        languageNote = "Getting \(language.name) ready…"
+        let speech = speech!
+        Task { [weak self] in
+            var note: String?
+            do { try await speech.prepare(language) } catch { note = "\(language.name) unavailable: \(error.localizedDescription)" }
+            guard let self, self.settings.language == language else { return }
+            self.languageNote = note
+            if self.state == .recording { self.refreshHint() }
+        }
+    }
+
     /// The Send checkbox, the destination and the hint, after any of them changed.
     private func updateBarControls() {
         model.submit = settings.submitOnSecondPress
@@ -345,6 +399,8 @@ final class AppController: NSObject, NSMenuDelegate {
         model.textShortcut = settings.copiedTextToggleShortcut.label
         model.targetShortcuts = Self.pairLabel(settings.previousTargetShortcut, settings.nextTargetShortcut)
         model.targetName = targetLabel
+        model.languageName = settings.language.name
+        model.languageShortcuts = Self.pairLabel(settings.previousLanguageShortcut, settings.nextLanguageShortcut, "←", "→")
         if state == .reviewing { model.hint = reviewHint() } else if state == .recording { refreshHint() }
     }
 
@@ -392,10 +448,10 @@ final class AppController: NSObject, NSMenuDelegate {
         model.targetPulse += 1
     }
 
-    /// "⌃⌥↑↓" for the usual pair, otherwise both shortcuts.
-    static func pairLabel(_ up: Shortcut, _ down: Shortcut) -> String {
-        if up.tap == nil, down.tap == nil, up.modifiers == down.modifiers, up.keyName == "↑", down.keyName == "↓" {
-            return Shortcut.describe(modifiers: up.modifiers) + "↑↓"
+    /// "⌃⌥↑↓" for the usual pair (⌃⌥←→ for languages), otherwise both shortcuts.
+    static func pairLabel(_ up: Shortcut, _ down: Shortcut, _ upKey: String = "↑", _ downKey: String = "↓") -> String {
+        if up.tap == nil, down.tap == nil, up.modifiers == down.modifiers, up.keyName == upKey, down.keyName == downKey {
+            return Shortcut.describe(modifiers: up.modifiers) + upKey + downKey
         }
         return "\(up.label) \(down.label)"
     }
@@ -423,7 +479,7 @@ final class AppController: NSObject, NSMenuDelegate {
         log.info("recording; speech \(String(describing: self.speechState), privacy: .public)")
         state = .recording
         generation += 1
-        composer = Composer()
+        composer = Composer(lag: settings.language.transcriptLag)
         beforeCleanup = nil
         afterCleanup = nil
         rawTranscript = nil
@@ -453,33 +509,51 @@ final class AppController: NSObject, NSMenuDelegate {
             MainActor.assumeIsolated { self?.model.elapsed = Date().timeIntervalSince(self?.recordingStart ?? Date()) }
         }
 
-        speechListening = false
-        speechStart = nil
-        if speechState == .ready {
-            let terms = storage.vocabulary(forRepoAt: repoPath)
-            let gen = generation
-            let speech = speech!
-            speechStart = Task { [weak self] in
-                guard let self else { return false }
-                do {
-                    try await speech.start(terms: terms) { [weak self] text, ends, time in
-                        DispatchQueue.main.async { self?.transcriptUpdated(text, ends, time, generation: gen) }
-                    }
-                    if gen == generation { speechListening = true }
-                    return true
-                } catch {
-                    if gen == generation, state == .recording {
-                        model.phase = .error("Microphone unavailable: \(error.localizedDescription). You can still type.")
-                    }
-                    return false
-                }
-            }
-        }
+        startSpeech()
         if !settings.insertAtCursor, let target = settings.pinned { checkTargetStillThere(target) }
     }
 
-    private func transcriptUpdated(_ text: String, _ ends: [Double], _ time: Double, generation gen: Int) {
-        guard gen == generation, state != .idle else { return }
+    /// Starts listening in the current language. With `previous` (a language switch while talking),
+    /// that recogniser finishes first and its words stay in the message; the new one carries on after them.
+    private func startSpeech(after previous: Task<Bool, Never>? = nil) {
+        let gen = generation
+        speechSegment += 1
+        let segment = speechSegment
+        let language = settings.language
+        let terms = storage.vocabulary(forRepoAt: repoPath)
+        let speech = speech!
+        speechListening = false
+        speechStart = nil
+        guard previous != nil || language.isFrench || speechState == .ready else { return }
+        speechStart = Task { [weak self] in
+            if let previous, await previous.value {
+                let final = await speech.stop()
+                guard let self, gen == self.generation else { return false }
+                let kept = SpeechGate.keeps(final.text, duration: final.time, speech: final.speech)
+                self.composer.updateTranscript(kept ? final.text : "", newWordStartTimes: kept ? final.wordStarts : [], at: final.time)
+                self.composer.restartTranscript(at: final.time, lag: language.transcriptLag)
+                self.model.text = self.composer.render()
+            }
+            guard let self, gen == self.generation, self.state == .recording,
+                  language.isFrench || self.speechState == .ready else { return false }
+            do {
+                try await speech.start(language: language, terms: terms) { [weak self] text, ends, time in
+                    DispatchQueue.main.async { self?.transcriptUpdated(text, ends, time, generation: gen, segment: segment) }
+                }
+                if gen == self.generation, segment == self.speechSegment { self.speechListening = true }
+                return true
+            } catch {
+                if gen == self.generation, self.state == .recording {
+                    let problem = language.isFrench ? "\(language.name) unavailable" : "Microphone unavailable"
+                    self.model.phase = .error("\(problem): \(error.localizedDescription). You can still type.")
+                }
+                return false
+            }
+        }
+    }
+
+    private func transcriptUpdated(_ text: String, _ ends: [Double], _ time: Double, generation gen: Int, segment: Int) {
+        guard gen == generation, segment == speechSegment, state != .idle else { return }
         composer.updateTranscript(text, newWordStartTimes: ends, at: time)
         model.text = composer.render()
         evaluateRoute()
@@ -650,7 +724,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.phase = .info("Tidying up with \(choice.name)…")
         let gen = generation
         let started = Date()
-        let result = await cleaner.clean(original, terms: terms, with: choice)
+        let result = await cleaner.clean(original, terms: terms, language: settings.language, with: choice)
         log.info("tidy with \(choice.id, privacy: .public): \(String(describing: result.map { Cleanup.wordCount($0) }), privacy: .public) in \(Date().timeIntervalSince(started)) s")
         guard gen == generation else { return "cancelled" }
         switch result {
@@ -1045,10 +1119,14 @@ final class AppController: NSObject, NSMenuDelegate {
         if settings.captureScreenshots { parts.append("⌘⌃⇧4 adds a screenshot") }
         if settings.captureCopiedText { parts.append("⌘C adds what you copy") }
         if cleanupChoice != nil { parts.insert("\(settings.cleanupShortcut.label) to tidy up", at: 2) }
-        switch speechState {
-        case .loading(let s): parts.insert(s, at: 0)
-        case .failed(let s): parts.insert(s + " (type instead)", at: 0)
-        default: break
+        if settings.language.isFrench {
+            if let languageNote { parts.insert(languageNote, at: 0) }
+        } else {
+            switch speechState {
+            case .loading(let s): parts.insert(s, at: 0)
+            case .failed(let s): parts.insert(s + " (type instead)", at: 0)
+            default: break
+            }
         }
         model.hint = parts.joined(separator: "  ·  ")
     }
@@ -1066,6 +1144,7 @@ final class AppController: NSObject, NSMenuDelegate {
         model.showsSubmit = false
         model.showsCapture = false
         model.targetShortcuts = ""
+        model.languageName = ""
         model.routeNote = ""
         panel.present()
         hideWork?.cancel()
@@ -1112,6 +1191,15 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.addItem(header("Open a session"))
 
         addSessionItems(to: menu)
+
+        menu.addItem(.separator())
+        menu.addItem(header("Language"))
+        for language in DictationLanguage.allCases {
+            let mi = item(language.name, #selector(pickLanguage(_:)))
+            mi.representedObject = language.rawValue
+            mi.state = settings.language == language ? .on : .off
+            menu.addItem(mi)
+        }
 
         menu.addItem(.separator())
         let submit = item("Second press sends (Enter)", #selector(toggleSubmit))
@@ -1181,6 +1269,7 @@ final class AppController: NSObject, NSMenuDelegate {
         switch speechState {
         case .notLoaded: return "Speech: not loaded"
         case .loading(let s): return "Speech: \(s)"
+        case .ready where settings.language.isFrench: return "Speech: \(languageNote ?? "\(settings.language.name), on this Mac")"
         case .ready: return "Speech: ready (Parakeet, on this Mac)"
         case .failed(let s): return "Speech: \(s)"
         }
@@ -1218,6 +1307,14 @@ final class AppController: NSObject, NSMenuDelegate {
         } else {
             updateBarControls()  // this message goes to the new session
         }
+    }
+
+    @objc private func pickLanguage(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let language = DictationLanguage(rawValue: id) else { return }
+        var s = settings
+        s.language = language
+        apply(s)
+        settingsWindow.update(settings)
     }
 
     @objc private func pickCursor() {
