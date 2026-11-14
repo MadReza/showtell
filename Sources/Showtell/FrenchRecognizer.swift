@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Foundation
+import ShowtellCore
 import Speech
 
 /// French on Apple's on-device recogniser (SpeechAnalyzer + SpeechTranscriber, macOS 26). Measured
@@ -107,17 +108,33 @@ final class FrenchRecognizer: @unchecked Sendable {
     }
 
     /// Waits for the recogniser to settle everything it was given; returns the final transcript.
+    /// It has been seen never to answer: after a few seconds, keep what it said so far.
     func finish() async -> String {
         input.finish()
-        try? await analyzer.finalizeAndFinishThroughEndOfInput()
-        await reader?.value
+        let analyzer = analyzer, reader = reader
+        log.info("french: finishing")
+        let finished = await withDeadline(seconds: 3) { () -> Bool in
+            try? await analyzer.finalizeAndFinishThroughEndOfInput()
+            await reader?.value
+            return true
+        }
+        if finished == nil {
+            log.error("french: finishing timed out; keeping the transcript so far")
+            reader?.cancel()
+            Task { await analyzer.cancelAndFinishNow() }  // may not answer either
+        } else {
+            log.info("french: finished")
+        }
         return transcript
     }
 
     func cancel() async {
         input.finish()
-        await analyzer.cancelAndFinishNow()
         reader?.cancel()
+        let analyzer = analyzer
+        if await withDeadline(seconds: 3, { await analyzer.cancelAndFinishNow() }) == nil {
+            log.error("french: cancel timed out")
+        }
     }
 
     private func received(_ result: SpeechTranscriber.Result) {

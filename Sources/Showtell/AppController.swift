@@ -526,23 +526,43 @@ final class AppController: NSObject, NSMenuDelegate {
         speechStart = nil
         guard previous != nil || language.isFrench || speechState == .ready else { return }
         speechStart = Task { [weak self] in
-            if let previous, await previous.value {
-                let final = await speech.stop()
-                guard let self, gen == self.generation else { return false }
-                let kept = SpeechGate.keeps(final.text, duration: final.time, speech: final.speech)
-                self.composer.updateTranscript(kept ? final.text : "", newWordStartTimes: kept ? final.wordStarts : [], at: final.time)
-                self.composer.restartTranscript(at: final.time, lag: language.transcriptLag)
-                self.model.text = self.composer.render()
+            if let previous {
+                guard let started = await self?.awaitStart(previous, within: Self.switchStartLimit, step: "switch") else {
+                    // The previous recogniser never came up: starting another on top of it could hang too.
+                    if let self, gen == self.generation, self.state == .recording {
+                        self.model.phase = .error("Speech didn't start in time. You can still type.")
+                    }
+                    return false
+                }
+                if started {
+                    log.info("switch: stopping speech")
+                    let final = await withDeadline(seconds: Self.speechStopLimit) { await speech.stop() }
+                    guard let self, gen == self.generation else { return false }
+                    if let final {
+                        log.info("switch: speech stopped")
+                        let kept = SpeechGate.keeps(final.text, duration: final.time, speech: final.speech)
+                        self.composer.updateTranscript(kept ? final.text : "", newWordStartTimes: kept ? final.wordStarts : [], at: final.time)
+                        self.composer.restartTranscript(at: final.time, lag: language.transcriptLag)
+                    } else {
+                        // The words already in the bar stay; the new language carries on after them.
+                        log.error("switch: speech stop timed out; keeping the text so far")
+                        self.composer.restartTranscript(at: speech.captured, lag: language.transcriptLag)
+                    }
+                    self.model.text = self.composer.render()
+                }
             }
             guard let self, gen == self.generation, self.state == .recording,
                   language.isFrench || self.speechState == .ready else { return false }
             do {
+                log.info("speech: starting \(language.rawValue, privacy: .public)")
                 try await speech.start(language: language, terms: terms) { [weak self] text, ends, time in
                     DispatchQueue.main.async { self?.transcriptUpdated(text, ends, time, generation: gen, segment: segment) }
                 }
+                log.info("speech: started \(language.rawValue, privacy: .public)")
                 if gen == self.generation, segment == self.speechSegment { self.speechListening = true }
                 return true
             } catch {
+                log.error("speech: start failed: \(error.localizedDescription, privacy: .public)")
                 if gen == self.generation, self.state == .recording {
                     let problem = language.isFrench ? "\(language.name) unavailable" : "Microphone unavailable"
                     self.model.phase = .error("\(problem): \(error.localizedDescription). You can still type.")
@@ -623,11 +643,20 @@ final class AppController: NSObject, NSMenuDelegate {
     private func finishListening() async -> Bool {
         state = .finishing
         stopCapture()
+        bindCancel()  // the way out, should the recogniser not answer
         let gen = generation
-        if let speechStart, await speechStart.value {
+        let speech = speech!
+        if let speechStart, await awaitStart(speechStart, within: Self.finishStartLimit, step: "finish") == true {
             model.phase = .info("Finishing…")
-            let final = await speech.stop()
-            if gen == generation {
+            log.info("finish: stopping speech")
+            let final = await withDeadline(seconds: Self.speechStopLimit) { await speech.stop() }
+            if final == nil {
+                log.error("finish: speech stop timed out; keeping the text in the bar")
+                Task { await speech.cancel() }
+            } else {
+                log.info("finish: speech stopped")
+            }
+            if let final, gen == generation {
                 // A quick press, or no one speaking: the recogniser's words are made up.
                 let kept = SpeechGate.keeps(final.text, duration: final.time, speech: final.speech)
                 log.info("speech \(final.speech) s of \(final.time) s: transcript \(kept ? "kept" : "dropped", privacy: .public)")
@@ -644,6 +673,26 @@ final class AppController: NSObject, NSMenuDelegate {
         speechStart = nil
         speechListening = false
         return gen == generation
+    }
+
+    /// How long to wait on the recogniser before carrying on without it. Starting French can
+    /// fetch its model, so a switch waits longer than a finish, where you are waiting.
+    private static let finishStartLimit = 5.0
+    private static let switchStartLimit = 10.0
+    private static let speechStopLimit = 10.0
+
+    /// Waits for a start of listening: whether it started, or nil if it didn't answer in time.
+    /// A late start is cancelled whenever it ends, so the microphone doesn't stay on.
+    private func awaitStart(_ start: Task<Bool, Never>, within seconds: Double, step: String) async -> Bool? {
+        log.info("\(step, privacy: .public): waiting for speech to start")
+        guard let started = await withDeadline(seconds: seconds, { await start.value }) else {
+            log.error("\(step, privacy: .public): speech start timed out")
+            let speech = speech!
+            Task { if await start.value { await speech.cancel() } }
+            return nil
+        }
+        log.info("\(step, privacy: .public): speech start \(started ? "done" : "failed", privacy: .public)")
+        return started
     }
 
     private func finishAndSend() async {
@@ -673,6 +722,8 @@ final class AppController: NSObject, NSMenuDelegate {
     /// Listening ended with nothing to send: the bar goes, as if cancelled, and nothing is kept.
     private func dropEmpty() {
         log.info("nothing to send: bar dismissed")
+        cancelBinding?.stop()  // bound while finishing
+        cancelBinding = nil
         composer = Composer()
         state = .idle
         spokenRoute = nil
@@ -1064,8 +1115,9 @@ final class AppController: NSObject, NSMenuDelegate {
         flash(.info("Cancelled: the message wasn't sent (History keeps it)"), for: 3)
     }
 
+    /// Also while finishing: the generation bump makes the waiting `finishListening` give up.
     private func cancelRecording() {
-        guard state == .recording || state == .reviewing else { return }
+        guard state == .recording || state == .finishing || state == .reviewing else { return }
         stopCapture()
         // Its pictures stay in shots/, named as unsent.
         ShotNames.rename(composer.shotURLs, text: composer.render(),

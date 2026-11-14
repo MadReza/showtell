@@ -1400,3 +1400,50 @@ enum DialogScreens {
         #expect(Vocabulary.applyReplacements("le Showtell marche", [("showtell", "Showtell")]) == "le Showtell marche")
     }
 }
+
+@Suite struct DeadlineTests {
+    /// Keeps a continuation alive without ever resuming it: an operation that never answers.
+    final class Never_: @unchecked Sendable {
+        private var held: [CheckedContinuation<Int, Never>] = []
+        private let lock = NSLock()
+        func hang() async -> Int {
+            await withCheckedContinuation { keep($0) }
+        }
+        private func keep(_ c: CheckedContinuation<Int, Never>) {
+            lock.lock(); defer { lock.unlock() }
+            held.append(c)
+        }
+    }
+
+    @Test func returnsTheValueWhenFast() async {
+        let value = await withDeadline(seconds: 2) { 42 }
+        #expect(value == 42)
+    }
+
+    @Test func returnsNilOnTimeWhenTheOperationNeverFinishes() async {
+        let never = Never_()
+        let started = Date()
+        let value = await withDeadline(seconds: 0.2) { await never.hang() }
+        #expect(value == nil)
+        #expect(Date().timeIntervalSince(started) < 1.5)
+    }
+
+    @Test func cancelsTheOperationOnTimeout() async throws {
+        let cancelled = Flag()
+        let value = await withDeadline(seconds: 0.1) { () -> Int in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if Task.isCancelled { cancelled.set() }
+            return 1
+        }
+        #expect(value == nil)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(cancelled.isSet)
+    }
+
+    final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.lock(); value = true; lock.unlock() }
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    }
+}
