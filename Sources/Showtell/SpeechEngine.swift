@@ -153,7 +153,15 @@ actor SpeechEngine {
             return (text, recognizer.consumeWordStarts(), clock.processed, await takeSpeechSeconds())
         }
         var text = await asr.getPartialTranscript()
-        if let final = try? await asr.finish() { text = final }
+        // Bounded like French's: if the rescoring never answers, the partial transcript stands.
+        let asr = asr
+        log.info("speech: finishing english")
+        if let final = await withDeadline(seconds: 3, { try? await asr.finish() }) {
+            if let final { text = final }
+            log.info("speech: finished english")
+        } else {
+            log.error("speech: finishing english timed out; keeping the partial transcript")
+        }
         return (text, await newWordStarts(), clock.processed, await takeSpeechSeconds())
     }
 
@@ -244,7 +252,11 @@ actor SpeechEngine {
         feed?.finish()
         feed = nil
         if !drain { pump?.cancel() }
-        await pump?.value
+        // A recogniser stuck on a buffer would keep the pump, and so this, waiting for good.
+        if let pump, await withDeadline(seconds: 3, { await pump.value }) == nil {
+            log.error("speech: audio drain timed out")
+            pump.cancel()
+        }
         pump = nil
     }
 
